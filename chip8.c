@@ -1,9 +1,11 @@
+#define _DEFAULT_SOURCE
 #include <time.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/stat.h>
 
 #define unused(x)	(void)(x)
@@ -14,19 +16,26 @@
 
 #define countof(arr)	(sizeof(arr) / sizeof((arr)[0]))
 
-#define CHIP8_MEMORY		0x1000
-#define CHIP8_DATA_REGISTERS	0x10
-#define CHIP8_STACK_MEMORY	0x1000
 
-#define CHIP8_CLOCK_TICKS	60
+#define CHIP8_MEMORY		0x1000
+#define CHIP8_RESERVED_MEMORY	0x200
+#define CHIP8_AVAILABLE_MEMORY	0xe00
+
+#define CHIP8_PROGRAM_START	0x200
+
+#define CHIP8_STACK_SIZE	0x10
+#define CHIP8_STACK_ADDR	0xEFF
+
+#define CHIP8_TIMER_FREQ	60
 
 #define CHIP8_DISPLAY_HEIGHT	32
 #define CHIP8_DISPLAY_WIDTH	64
+#define CHIP8_DISPLAY_MEMORY	(CHIP8_DISPLAY_HEIGHT * (CHIP8_DISPLAY_WIDTH / 8))
 
 enum chip8_register {
 	REG_V0, REG_V1, REG_V2, REG_V3, REG_V4, REG_V5, REG_V6,
 	REG_V7, REG_V8, REG_V9, REG_VA, REG_VB, REG_VC, REG_VD,
-	REG_VE, REG_VF
+	REG_VE, REG_VF, CHIP8_REGISTERS,
 };
 
 struct chip8 {
@@ -35,38 +44,38 @@ struct chip8 {
 
 	uint16_t pc;
 
-	uint16_t i_reg : 12;
+	uint16_t i_reg;
 
-	uint8_t reg[CHIP8_DATA_REGISTERS];
+	uint8_t v_reg[CHIP8_REGISTERS];
 
-	uint8_t stack[CHIP8_STACK_MEMORY];
+	uint8_t sp;
+	uint16_t stack[CHIP8_STACK_SIZE];
+
 	uint8_t memory[CHIP8_MEMORY];
 
-	uint8_t display[CHIP8_DISPLAY_HEIGHT][CHIP8_DISPLAY_WIDTH];
+	uint8_t display[CHIP8_DISPLAY_MEMORY];
 } emulator;
 
 void chip8_init(struct chip8 *machine);
+
+int chip8_load_rom(struct chip8 *machine, const char *path);
+
 void chip8_dump_registers(const struct chip8 *machine);
 void chip8_diagnostics(const struct chip8 *machine);
+
 void chip8_run(struct chip8 *machine);
 
-struct chip8_executable {
-	uint8_t *data;
-	uint16_t size;
-};
-
-struct chip8_executable read_executable(const char *path);
-void load_executable(struct chip8 *machine, const struct chip8_executable *exe);
-void close_executable(struct chip8_executable *exe);
 
 [[noreturn]] void usage(void)
 {
-	fprintf(stderr, "chip8 [EXECUTABLE]...\n");
-	exit(1);
+	die("usage: chip8 ROM");
 }
 
 int main(int argc, char **argv)
 {
+	if (argc != 2)
+		usage();
+
 	int err = 0;
 
 	chip8_init(&emulator);
@@ -76,91 +85,84 @@ int main(int argc, char **argv)
 	for (int arg = 1; arg < argc; arg++) {
 		const char *path = argv[arg];
 
-		struct chip8_executable program = read_executable(path);
-		
-		if (!program.data) {
+		printf("\nloading rom (\'%s\')...\n", path);
+
+		if (chip8_load_rom(&emulator, path)) {
 			err++;
 			continue;
 		}
 
-		load_executable(&emulator, &program);
+		printf("running program...\n\n");
 
-		printf("\nrunning program \'%s\'\n\n", path);
 		chip8_run(&emulator);
 
 		chip8_dump_registers(&emulator);
 
 		printf("\nprogram completed\n");
-		close_executable(&program);
 	}
 
-	if (err)
-		usage();
+	return err;
 }
 
-
-struct chip8_executable read_executable(const char *path)
+void chip8_init(struct chip8 *machine)
 {
-	struct chip8_executable exe = { 0 };
+	srand(time(nullptr));
+	*machine = (struct chip8){ 0 };
+}
 
+int chip8_load_rom(struct chip8 *machine, const char *path)
+{
 	struct stat stats;
 	if (stat(path, &stats)) {
-		warn("unable to get executable's (\'%s\') size: %s", path, strerror(errno));
-		return (struct chip8_executable){ 0 };
+		warn("unable to get rom's (\'%s\') size: %s", path, strerror(errno));
+		return 1;
 	}
 	
-	if (stats.st_size > CHIP8_MEMORY) {
-		warn("executable (\'%s\') is too large", path);
-		return (struct chip8_executable){ 0 };
+	if (stats.st_size > CHIP8_AVAILABLE_MEMORY) {
+		warn("rom (\'%s\') is too large", path);
+		return 1;
 	}
+
+	const uint16_t rom_size = stats.st_size; 
 	
 	FILE *f = fopen(path, "r");
 	if (!f) {
-		warn("unable to open executable (\'%s\') for reading: %s", path, strerror(errno));
-		goto cleanup_file;
-	}
-		
-	exe.size = stats.st_size;
-	exe.data = calloc(exe.size, sizeof(exe.data[0]));
-
-	if (!exe.data) {
-		warn("unable to allocate memory for executable (\'%s\') data: %s", path, strerror(errno));
-		return (struct chip8_executable){ 0 };
+		warn("unable to open rom (\'%s\') for reading: %s", path, strerror(errno));
+		return 1;
 	}
 	
-	if (fread(exe.data, sizeof(exe.data[0]), exe.size, f) != exe.size) {
-		warn("unable to read executable (\'%s\'): %s", path, strerror(errno));
-		goto cleanup_memory;
+	if (fread(machine->memory + CHIP8_PROGRAM_START, sizeof(*machine->memory), rom_size, f) != rom_size) {
+		warn("unable to read rom (\'%s\'): %s", path, strerror(errno));
+		return 1;
 	}
-	
-	return exe;
 
-cleanup_memory:
-	free(exe.data);
-cleanup_file:
-	fclose(f);
-
-	return (struct chip8_executable){ 0 };
+	return 0;
 }
 
-void load_executable(struct chip8 *machine, const struct chip8_executable *exe)
+void chip8_dump_registers(const struct chip8 *machine)
 {
-	if (exe->size)
-		memcpy(machine->memory, exe->data, exe->size);
+	printf("registers\n"); 
+
+	printf("PC: 0x%.3hx\n", machine->pc);
+	printf("SP: 0x%.3hx\n", machine->sp);
+	printf("I: 0x%.3hx\n", machine->i_reg);
+
+	for (enum chip8_register reg = REG_V0; reg < CHIP8_REGISTERS; reg++)
+		printf("V%X: 0x%.2hhx\n", reg, machine->v_reg[reg]); 
 }
 
-void close_executable(struct chip8_executable *exe)
+void chip8_diagnostics(const struct chip8 *machine)
 {
-	free(exe->data);
-	*exe = (struct chip8_executable){ 0 };
+	printf("(chip8)\n");
+	printf("total data registers: %zu\n", sizeof(machine->v_reg));
+	printf("total available memory: %zu\n", sizeof(machine->memory));
+	printf("total stack memory: %zu\n", sizeof(machine->stack));
+	printf("display (%zu x %zu)\n", sizeof(machine->display[0]), countof(machine->display));
 }
 
-
-static void clear_display(struct chip8 *machine)
+static inline void clear_display(struct chip8 *machine)
 {
-	for (size_t y = 0; y < CHIP8_DISPLAY_HEIGHT; y++)
-		for (size_t x = 0; x < CHIP8_DISPLAY_WIDTH; x++)
-			machine->display[y][x] = 0;
+	memset(machine->display, 0x0, sizeof(machine->display));
 }
 
 static void draw(const uint8_t x, const uint8_t y, const uint8_t height)
@@ -184,15 +186,19 @@ static uint8_t key_pressed(void)
 
 static void subroutine_return(struct chip8 *machine)
 {
-	unused(machine);
-	todo("subroutine_return");
+	if (!machine->sp)
+		die("stack underflow???");
+
+	machine->pc = machine->stack[--machine->sp];
 }
 
 static void subroutine_enter(struct chip8 *machine, const uint16_t addr)
 {
-	unused(addr);
-	unused(machine);
-	todo("subroutine_enter");
+	if (machine->sp >= CHIP8_STACK_SIZE)
+		die("stack overflow");
+
+	machine->stack[machine->sp++] = machine->pc;
+	machine->pc = addr;
 }
 
 static void store_binary_coded_decimal(struct chip8 *machine, const uint8_t val)
@@ -203,16 +209,16 @@ static void store_binary_coded_decimal(struct chip8 *machine, const uint8_t val)
 }
 
 /*
-	TODO: implement error codes to be stored in chip8 type so the program
+	TODO: implement error codes to be stored in chip8 type so the rom
 	doesn't have to die
 */
 
 static inline uint8_t *get_memory_address(struct chip8 *machine, const uint16_t addr)
 {
-	if (addr >= CHIP8_STACK_MEMORY)
+	if (addr >= CHIP8_MEMORY)
 		die("invalid memory access at 0x%hX", addr);
 	
-	return machine->stack + addr;
+	return machine->memory + addr;
 }
 
 static void register_dump(struct chip8 *machine, const enum chip8_register reg)
@@ -220,7 +226,7 @@ static void register_dump(struct chip8 *machine, const enum chip8_register reg)
 	uint16_t offset = 0;
 	for (enum chip8_register r = REG_V0; r <= reg; r++) {
 		uint8_t *mem = get_memory_address(machine, machine->i_reg + offset);
-		*mem = machine->reg[r];
+		*mem = machine->v_reg[r];
 
 		offset++;
 	}
@@ -231,7 +237,7 @@ static void register_load(struct chip8 *machine, const enum chip8_register reg)
 	uint16_t offset = 0;
 	for (enum chip8_register r = REG_V0; r <= reg; r++) {
 		uint8_t *mem = get_memory_address(machine, machine->i_reg + offset);
-		machine->reg[r] = *mem;
+		machine->v_reg[r] = *mem;
 
 		offset++;
 	}
@@ -257,11 +263,8 @@ static inline uint16_t read_op_code(const struct chip8 *machine)
 	return ((uint16_t)machine->memory[machine->pc] << 8) | machine->memory[machine->pc + 1];
 }
 
-static void instruct(struct chip8 *machine)
+static void instruct(struct chip8 *machine, const uint16_t op)
 {
-	const uint16_t op = read_op_code(machine);
-	advance_program_counter(machine);
-
 	const uint8_t op_code_id = (op >> 12);
 	switch (op_code_id) {
 	case 0x0: {
@@ -289,7 +292,7 @@ static void instruct(struct chip8 *machine)
 		const enum chip8_register reg = ((op >> 8) & 0xF);
 		const uint8_t val = (op & 0xFF);
 
-		if (machine->reg[reg] == val)
+		if (machine->v_reg[reg] == val)
 			advance_program_counter(machine);
 	} break;
 
@@ -297,7 +300,7 @@ static void instruct(struct chip8 *machine)
 		const enum chip8_register reg = ((op >> 8) & 0xF);
 		const uint8_t val = (op & 0xFF);
 
-		if (machine->reg[reg] != val)
+		if (machine->v_reg[reg] != val)
 			advance_program_counter(machine);
 	} break;
 
@@ -308,7 +311,7 @@ static void instruct(struct chip8 *machine)
 		const enum chip8_register reg0 = ((op >> 8) & 0xF);
 		const enum chip8_register reg1 = ((op >> 4) & 0xF);
 
-		if (machine->reg[reg0] == machine->reg[reg1])
+		if (machine->v_reg[reg0] == machine->v_reg[reg1])
 			advance_program_counter(machine);
 	} break;
 
@@ -316,14 +319,14 @@ static void instruct(struct chip8 *machine)
 		const enum chip8_register reg = ((op >> 8) & 0xF);
 		const uint8_t val = (op & 0xFF);
 
-		machine->reg[reg] = val;
+		machine->v_reg[reg] = val;
 	} break;
 
 	case 0x7: {
 		const enum chip8_register reg = ((op >> 8) & 0xF);
 		const uint8_t val = (op & 0xFF);
 
-		machine->reg[reg] += val;
+		machine->v_reg[reg] += val;
 	} break;
 
 	case 0x8: {
@@ -331,37 +334,37 @@ static void instruct(struct chip8 *machine)
 		const enum chip8_register reg1 = ((op >> 4) & 0xF);
 
 		switch (op & 0xF) {
-		case 0:		machine->reg[reg0] = machine->reg[reg1]; break;
+		case 0:		machine->v_reg[reg0] = machine->v_reg[reg1]; break;
 
-		case 1:		machine->reg[reg0] |= machine->reg[reg1]; break;
+		case 1:		machine->v_reg[reg0] |= machine->v_reg[reg1]; break;
 
-		case 2:		machine->reg[reg0] &= machine->reg[reg1]; break;
+		case 2:		machine->v_reg[reg0] &= machine->v_reg[reg1]; break;
 
-		case 3:		machine->reg[reg0] ^= machine->reg[reg1]; break;
+		case 3:		machine->v_reg[reg0] ^= machine->v_reg[reg1]; break;
 
 		case 4: {
-			machine->reg[REG_VF] = (0xFF - machine->reg[reg1] < machine->reg[reg0]);
-			machine->reg[reg0] += machine->reg[reg1];
+			machine->v_reg[REG_VF] = (0xFF - machine->v_reg[reg1] < machine->v_reg[reg0]);
+			machine->v_reg[reg0] += machine->v_reg[reg1];
 		} break;
 
 		case 5: {
-			machine->reg[REG_VF] = (machine->reg[reg0] < machine->reg[reg1]);
-			machine->reg[reg0] -= machine->reg[reg1];
+			machine->v_reg[REG_VF] = (machine->v_reg[reg0] < machine->v_reg[reg1]);
+			machine->v_reg[reg0] -= machine->v_reg[reg1];
 		} break;
 
 		case 6: {
-			machine->reg[REG_VF] = machine->reg[reg0] & 1;
-			machine->reg[reg0] >>= machine->reg[reg1];
+			machine->v_reg[REG_VF] = machine->v_reg[reg0] & 1;
+			machine->v_reg[reg0] >>= machine->v_reg[reg1];
 		} break;
 
 		case 7: {
-			machine->reg[REG_VF] = (machine->reg[reg1] < machine->reg[reg0]);
-			machine->reg[reg0] = machine->reg[reg1] - machine->reg[reg0];
+			machine->v_reg[REG_VF] = (machine->v_reg[reg1] < machine->v_reg[reg0]);
+			machine->v_reg[reg0] = machine->v_reg[reg1] - machine->v_reg[reg0];
 		} break;
 
 		case 0xE: {
-			machine->reg[REG_VF] = machine->reg[reg0] >> 7;
-			machine->reg[reg0] <<= machine->reg[reg1];
+			machine->v_reg[REG_VF] = machine->v_reg[reg0] >> 7;
+			machine->v_reg[reg0] <<= machine->v_reg[reg1];
 		} break;
 
 		default:	invalid_opcode(machine, op);
@@ -375,7 +378,7 @@ static void instruct(struct chip8 *machine)
 		const enum chip8_register reg0 = ((op >> 8) & 0xF);
 		const enum chip8_register reg1 = ((op >> 4) & 0xF);
 
-		if (machine->reg[reg0] != machine->reg[reg1])
+		if (machine->v_reg[reg0] != machine->v_reg[reg1])
 			advance_program_counter(machine);
 	} break;
 
@@ -388,14 +391,14 @@ static void instruct(struct chip8 *machine)
 	case 0xB: {
 		const uint16_t addr = (op & 0x0FFF);
 
-		machine->pc = machine->reg[REG_V0] + addr;
+		machine->pc = machine->v_reg[REG_V0] + addr;
 	} break;
 
 	case 0xC: {
 		const enum chip8_register reg = ((op >> 8) & 0xF);
 		const uint8_t val = (op & 0xFF);
 
-		machine->reg[reg] = (rand() & 0xFF) & val;
+		machine->v_reg[reg] = (rand() & 0xFF) & val;
 	} break;
 
 	case 0xD: {
@@ -404,7 +407,7 @@ static void instruct(struct chip8 *machine)
 
 		const uint8_t sprite_height = (op & 0xF);
 
-		draw(machine->reg[reg0], machine->reg[reg1], sprite_height);
+		draw(machine->v_reg[reg0], machine->v_reg[reg1], sprite_height);
 	} break;
 
 	case 0xE: {
@@ -413,12 +416,12 @@ static void instruct(struct chip8 *machine)
 
 		switch (code) {
 		case 0x9E: {
-			if (key_pressed() == machine->reg[reg])
+			if (key_pressed() == machine->v_reg[reg])
 				advance_program_counter(machine);
 		} break;
 
 		case 0xA1: {
-			if (key_pressed() != machine->reg[reg])
+			if (key_pressed() != machine->v_reg[reg])
 				advance_program_counter(machine);
 		} break;
 
@@ -431,19 +434,19 @@ static void instruct(struct chip8 *machine)
 		const enum chip8_register reg = ((op >> 8) & 0xF);
 
 		switch (code) {
-		case 0x07:	machine->reg[reg] = machine->delay_timer; break;
+		case 0x07:	machine->v_reg[reg] = machine->delay_timer; break;
 
-		case 0x0A:	machine->reg[reg] = key_pressed(); break;
+		case 0x0A:	machine->v_reg[reg] = key_pressed(); break;
 
-		case 0x15:	machine->delay_timer = machine->reg[reg]; break;
+		case 0x15:	machine->delay_timer = machine->v_reg[reg]; break;
 
-		case 0x18:	machine->sound_timer = machine->reg[reg]; break;
+		case 0x18:	machine->sound_timer = machine->v_reg[reg]; break;
 		
-		case 0x1E:	machine->i_reg += machine->reg[reg]; break;
+		case 0x1E:	machine->i_reg += machine->v_reg[reg]; break;
 
-		case 0x29:	machine->i_reg = sprite_address(machine->reg[reg]); break;
+		case 0x29:	machine->i_reg = sprite_address(machine->v_reg[reg]); break;
 
-		case 0x33:	store_binary_coded_decimal(machine, machine->reg[reg]); break;
+		case 0x33:	store_binary_coded_decimal(machine, machine->v_reg[reg]); break;
 
 		case 0x55:	register_dump(machine, reg); break;
 
@@ -455,44 +458,36 @@ static void instruct(struct chip8 *machine)
 	}
 }
 
-void chip8_init(struct chip8 *machine)
+static void tick(struct chip8 *machine)
 {
-	srand(time(nullptr));
-
-	*machine = (struct chip8){ 0 };
-
-	machine->delay_timer = CHIP8_CLOCK_TICKS;
-	machine->sound_timer = CHIP8_CLOCK_TICKS;
+	if (machine->delay_timer)
+		machine->delay_timer--;
+	if (machine->sound_timer)
+		machine->sound_timer--;
+	
+	usleep((1000 * 1000) / CHIP8_TIMER_FREQ);
 }
 
 void chip8_run(struct chip8 *machine)
 {
-	machine->pc = 0x0000;
+	machine->delay_timer = CHIP8_TIMER_FREQ;
+	machine->sound_timer = CHIP8_TIMER_FREQ;
 
-	memset(machine->reg, 0x0, sizeof(machine->reg));
-	memset(machine->stack, 0x0, CHIP8_STACK_MEMORY);
+	machine->pc = CHIP8_PROGRAM_START;
+	machine->sp = 0;
 
 	machine->i_reg = 0x000;
+	memset(machine->v_reg, 0x0, sizeof(machine->v_reg));
 
-	while (read_op_code(machine))
-		instruct(machine);
-}
+	for (;;) {
+		const uint16_t op = read_op_code(machine);
+		if (!op)
+			break;
 
-void chip8_dump_registers(const struct chip8 *machine)
-{
-	printf("registers\n"); 
-	for (enum chip8_register reg = REG_V0; reg < CHIP8_DATA_REGISTERS; reg++)
-		printf("V%X: 0x%.2hhx\n", reg, machine->reg[reg]); 
-	printf("I: 0x%.4hx\n", machine->i_reg);
-}
+		advance_program_counter(machine);
 
-void chip8_diagnostics(const struct chip8 *machine)
-{
-	printf("(chip8)\n");
-	printf("total data registers: %zu\n", sizeof(machine->reg));
-	printf("total available memory: %zu\n", sizeof(machine->memory));
-	printf("total stack memory: %zu\n", sizeof(machine->stack));
-	printf("display (%zu x %zu)\n", sizeof(machine->display[0]), countof(machine->display));
+		instruct(machine, op);
 
-	chip8_dump_registers(machine);
+		tick(machine);
+	}
 }
