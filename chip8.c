@@ -1,11 +1,15 @@
 #define _DEFAULT_SOURCE
+
 #include <time.h>
+#include <poll.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <termios.h>
 #include <sys/stat.h>
 
 #define unused(x)	(void)(x)
@@ -56,9 +60,7 @@ struct chip8 {
 	uint8_t display[CHIP8_DISPLAY_MEMORY];
 } emulator;
 
-void chip8_init(struct chip8 *machine);
-
-int chip8_load_rom(struct chip8 *machine, const char *path);
+void chip8_init(struct chip8 *machine, const char *rom_path);
 
 void chip8_dump_registers(const struct chip8 *machine);
 void chip8_diagnostics(const struct chip8 *machine);
@@ -76,73 +78,55 @@ int main(int argc, char **argv)
 	if (argc != 2)
 		usage();
 
-	int err = 0;
-
-	chip8_init(&emulator);
-
 	chip8_diagnostics(&emulator);
 
-	for (int arg = 1; arg < argc; arg++) {
-		const char *path = argv[arg];
+	const char *rom_path = argv[1];
 
-		printf("\nloading rom (\'%s\')...\n", path);
+	printf("loading rom (\'%s\')...\n", rom_path);
 
-		if (chip8_load_rom(&emulator, path)) {
-			err++;
-			continue;
-		}
+	chip8_init(&emulator, rom_path);
 
-		printf("running program...\n\n");
+	printf("rom successfully loaded\n");
 
-		chip8_run(&emulator);
+	printf("running program...\n");
 
-		chip8_dump_registers(&emulator);
+	chip8_run(&emulator);
 
-		printf("\nprogram completed\n");
-	}
+	printf("program completed, dumping registers\n");
 
-	return err;
+	chip8_dump_registers(&emulator);
 }
 
-void chip8_init(struct chip8 *machine)
-{
-	srand(time(nullptr));
-	*machine = (struct chip8){ 0 };
-}
 
-int chip8_load_rom(struct chip8 *machine, const char *path)
+static void load_rom(struct chip8 *machine, const char *path)
 {
 	struct stat stats;
-	if (stat(path, &stats)) {
-		warn("unable to get rom's (\'%s\') size: %s", path, strerror(errno));
-		return 1;
-	}
+	if (stat(path, &stats))
+		die("unable to get rom's (\'%s\') size: %s", path, strerror(errno));
 	
-	if (stats.st_size > CHIP8_AVAILABLE_MEMORY) {
-		warn("rom (\'%s\') is too large", path);
-		return 1;
-	}
+	if (stats.st_size > CHIP8_AVAILABLE_MEMORY)
+		die("rom (\'%s\') is too large", path);
 
 	const uint16_t rom_size = stats.st_size; 
 	
 	FILE *f = fopen(path, "r");
-	if (!f) {
-		warn("unable to open rom (\'%s\') for reading: %s", path, strerror(errno));
-		return 1;
-	}
+	if (!f)
+		die("unable to open rom (\'%s\') for reading: %s", path, strerror(errno));
 	
-	if (fread(machine->memory + CHIP8_PROGRAM_START, sizeof(*machine->memory), rom_size, f) != rom_size) {
-		warn("unable to read rom (\'%s\'): %s", path, strerror(errno));
-		return 1;
-	}
+	if (fread(machine->memory + CHIP8_PROGRAM_START, sizeof(*machine->memory), rom_size, f) != rom_size)
+		die("unable to read rom (\'%s\'): %s", path, strerror(errno));
+}
 
-	return 0;
+void chip8_init(struct chip8 *machine, const char *rom_path)
+{
+	srand(time(nullptr));
+	*machine = (struct chip8){ 0 };
+
+	load_rom(machine, rom_path);
 }
 
 void chip8_dump_registers(const struct chip8 *machine)
 {
-	printf("registers\n"); 
-
 	printf("PC: 0x%.3hx\n", machine->pc);
 	printf("SP: 0x%.3hx\n", machine->sp);
 	printf("I: 0x%.3hx\n", machine->i_reg);
@@ -157,7 +141,8 @@ void chip8_diagnostics(const struct chip8 *machine)
 	printf("total data registers: %zu\n", sizeof(machine->v_reg));
 	printf("total available memory: %zu\n", sizeof(machine->memory));
 	printf("total stack memory: %zu\n", sizeof(machine->stack));
-	printf("display (%zu x %zu)\n", sizeof(machine->display[0]), countof(machine->display));
+	printf("maximum stack frames: %zu\n", countof(machine->stack));
+	printf("display (%d x %d)\n", CHIP8_DISPLAY_WIDTH, CHIP8_DISPLAY_HEIGHT);
 }
 
 static inline void clear_display(struct chip8 *machine)
@@ -215,7 +200,7 @@ static void store_binary_coded_decimal(struct chip8 *machine, const uint8_t val)
 
 static inline uint8_t *get_memory_address(struct chip8 *machine, const uint16_t addr)
 {
-	if (addr >= CHIP8_MEMORY)
+	if (addr < CHIP8_RESERVED_MEMORY || addr >= CHIP8_MEMORY)
 		die("invalid memory access at 0x%hX", addr);
 	
 	return machine->memory + addr;
