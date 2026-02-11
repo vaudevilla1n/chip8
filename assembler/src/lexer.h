@@ -16,3 +16,4 @@ struct lexer {
 
 struct lexer lexer_new(const char *src, const size_t srclen);
 struct token lexer_next(struct lexer *lexer);
+struct token lexer_peek(struct lexer *lexer);

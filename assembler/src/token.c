@@ -1,6 +1,6 @@
 #include "token.h"
 
-const char *token_type_string(const enum token_type type)
+const char *token_type_to_string(const enum token_type type)
 {
 	switch (type) {
 	case TOKEN_EOF:		return "TOKEN_EOF";

@@ -1,6 +1,10 @@
 #pragma once
 
+#include "registers.h"
+#include "instructions.h"
+
 #include <stddef.h>
+#include <stdint.h>
 
 enum token_type {
 	TOKEN_EOF,
@@ -11,10 +15,17 @@ enum token_type {
 	TOKEN_INSTRUCTION,
 };
 
-const char *token_type_string(const enum token_type type);
+const char *token_type_to_string(const enum token_type type);
 
 struct token {
 	enum token_type type;
+
+	union {
+		enum instruction	ins;
+		enum registers		reg;
+		uint16_t		num;
+		const char *		err;
+	} as;
 
 	const char *text;
 	size_t textlen;

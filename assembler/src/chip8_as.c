@@ -1,5 +1,7 @@
 #include "token.h"
 #include "lexer.h"
+#include "parser.h"
+#include "instructions.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -37,15 +39,45 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	instruction_lookup_table_init();
+
 	struct lexer lexer = lexer_new(src.dat, src.len);
 
+	/*
 	for (;;) {
 		const struct token t = lexer_next(&lexer);
 
 		if (t.type == TOKEN_EOF)
 			break;
 
-		printf("%s \'%.*s\' line %zu, col %zu\n", token_type_string(t.type), (int)t.textlen, t.text, t.line, t.col);
+		printf("%-20s \'%.*s\' line %zu, col %zu", token_type_to_string(t.type), (int)t.textlen, t.text, t.line, t.col);
+
+		if (t.type == TOKEN_INVALID)
+			printf(" (%s)", t.as.err);
+
+		printf("\n");
+	}
+	*/
+
+	struct stmt stmt;
+	while (!parse_stmt(&stmt, &lexer)) {
+		printf("%-8s", instruction_to_string(stmt.instruction.as.ins));
+		
+		for (size_t i = 0; i < stmt.noperands; i++) {
+			if (i == 1)
+				printf(", ");
+
+			struct token *operand = stmt.operands + i;
+
+			switch (operand->type) {
+			case TOKEN_REGISTER:	printf("%s", registers_to_string(operand->as.reg)); break;
+			case TOKEN_NUMBER:	printf("0x%hx", operand->as.num); break;
+
+			default:	__builtin_unreachable();
+			}
+		}
+
+		printf("\n");
 	}
 
 	close_file(&src);
@@ -65,7 +97,7 @@ struct file read_file(const char *path)
 		return (struct file){ 0 };
 	
 	f.len = stats.st_size;
-	f.dat = mmap(nullptr, f.len, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, fd, 0);
+	f.dat = mmap(nullptr, f.len, PROT_READ, MAP_PRIVATE, fd, 0);
 
 	close(fd);
 
