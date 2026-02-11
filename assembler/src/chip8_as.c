@@ -1,6 +1,7 @@
 #include "token.h"
 #include "lexer.h"
 #include "parser.h"
+#include "opcodes.h"
 #include "instructions.h"
 
 #include <fcntl.h>
@@ -41,28 +42,15 @@ int main(int argc, char **argv)
 
 	instruction_lookup_table_init();
 
-	struct lexer lexer = lexer_new(src.dat, src.len);
-
 	/*
-	for (;;) {
-		const struct token t = lexer_next(&lexer);
-
-		if (t.type == TOKEN_EOF)
-			break;
-
-		printf("%-20s \'%.*s\' line %zu, col %zu", token_type_to_string(t.type), (int)t.textlen, t.text, t.line, t.col);
-
-		if (t.type == TOKEN_INVALID)
-			printf(" (%s)", t.as.err);
-
-		printf("\n");
-	}
+		TODO: wrap this in assembler header main
 	*/
+
+	struct lexer lexer = lexer_new(src.dat, src.len);
 
 	struct stmt stmt;
 	while (!parse_stmt(&stmt, &lexer)) {
 		printf("%-8s", instruction_to_string(stmt.instruction.as.ins));
-		
 		for (size_t i = 0; i < stmt.noperands; i++) {
 			if (i == 1)
 				printf(", ");
@@ -76,8 +64,10 @@ int main(int argc, char **argv)
 			default:	__builtin_unreachable();
 			}
 		}
-
 		printf("\n");
+
+		const uint16_t op = opcode_from_statement(&stmt);
+		printf("opcode: %hx\n", op);
 	}
 
 	close_file(&src);
