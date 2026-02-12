@@ -37,20 +37,17 @@ int assemble_source_file(const char *path)
 			printf("%s line %zu, col %zu \'%.*s\'\n", token_type_to_string(t.type), t.line, t.col, (int)t.textlen, t.text);
 	}
 
-	/*
+	lexer = lexer_new(src.dat, src.len);
 
 	struct stmt stmt;
 	for (;;) {
-		const enum parse_status status = parse_stmt(&stmt, &lexer);
+		const enum parse_status status = parse_statement(&stmt, &lexer);
 
 		if (status == PARSE_EOF)
 			break;
 
 		if (status == PARSE_ERROR)
 			continue;
-
-		const uint16_t op = opcode_from_statement(&stmt);
-		printf("(0x%.4hx) ", op);
 
 		printf("%-8s", instruction_to_string(stmt.instruction.as.ins));
 		for (size_t i = 0; i < stmt.noperands; i++) {
@@ -61,14 +58,18 @@ int assemble_source_file(const char *path)
 
 			switch (operand->type) {
 			case TOKEN_REGISTER:	printf("%s", registers_to_string(operand->as.reg)); break;
+
 			case TOKEN_NUMBER:	printf("0x%hx", operand->as.num); break;
+
+			case TOKEN_FONT:	
+			case TOKEN_BCD:		
+			case TOKEN_MEMORY:	printf("%.*s", (int)operand->textlen, operand->text); break;
 
 			default:	__builtin_unreachable();
 			}
 		}
 		printf("\n");
 	}
-	*/
 
 	close_file(&src);
 

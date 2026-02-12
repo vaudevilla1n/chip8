@@ -22,6 +22,9 @@ const char *registers_to_string(const enum registers reg)
 
 	case REG_I:	return "I";
 
+	case REG_ST:	return "ST";
+	case REG_DT:	return "DT";
+
 	default:	__builtin_unreachable();
 	}
 }

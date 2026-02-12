@@ -41,49 +41,64 @@ static enum parse_status parser_error(const struct token *t, const char *msg)
 	return PARSE_ERROR;
 }
 
-static inline bool check_token(struct lexer *lexer, const enum token_type type)
+static struct token peek_token(struct lexer *lexer)
 {
-	return lexer_peek(lexer).type == type;
+	while(lexer_peek(lexer).type == TOKEN_COMMENT)
+		lexer_next(lexer);
+	
+	return lexer_peek(lexer);
 }
 
-static enum parse_status try_parse_operand(struct operand *operand, struct lexer *lexer)
+static struct token next_token(struct lexer *lexer)
 {
-	switch (lexer_peek(lexer).type) {
-	case TOKEN_REGISTER:		operand->type = OPERAND_REGISTER; break;
-	case TOKEN_NUMBER:		operand->type = OPERAND_NUMBER; break;
-	case TOKEN_FONT:		operand->type = OPERAND_FONT; break;
-	case TOKEN_BCD:			operand->type = OPERAND_BCD; break;
-	case TOKEN_MEMORY:		operand->type = OPERAND_MEMORY; break;
+	while(lexer_peek(lexer).type == TOKEN_COMMENT)
+		lexer_next(lexer);
+	
+	return lexer_next(lexer);
+}
 
-	default:			return PARSE_ERROR;
+static inline bool check_token(struct lexer *lexer, const enum token_type type)
+{
+	return peek_token(lexer).type == type;
+}
+
+static bool check_operand_token(struct lexer *lexer)
+{
+	switch (peek_token(lexer).type) {
+	case TOKEN_REGISTER:
+	case TOKEN_NUMBER:
+	case TOKEN_FONT:
+	case TOKEN_BCD:
+	case TOKEN_MEMORY:
+		return true;
+
+	default:
+		return false;
 	}
-
-	operand->val = lexer_next(lexer);
-
-	return PARSE_SUCCESS;
 }
 
 static enum parse_status parse_operands(struct stmt *stmt, struct lexer *lexer)
 {
 	stmt->noperands = 0;
 
-	struct operand op;
-	if (try_parse_operand(&op, lexer) != PARSE_SUCCESS)
+	if (!check_operand_token(lexer))
 		return PARSE_SUCCESS;
 
-	stmt->operands[stmt->noperands++] = op;
+	stmt->operands[stmt->noperands++] = next_token(lexer);
 
-	while (lexer_peek(lexer).type == TOKEN_COMMA) {
-		const struct token comma = lexer_next(lexer);
+	while (peek_token(lexer).type == TOKEN_COMMA) {
+		next_token(lexer);
 
-		struct operand op;
-		if (try_parse_operand(&op, lexer) != PARSE_SUCCESS)
-			return parser_error(&comma, "expected operand");
+		if (!check_operand_token(lexer)) {
+			const struct token t = next_token(lexer);
+
+			return parser_error(&t, (t.type == TOKEN_INVALID) ? t.as.err : "expected operand");
+		}
 
 		if (stmt->noperands >= PARSE_OPERANDS_MAX)
 			return parser_error(&stmt->instruction, "too many operands");
 
-		stmt->operands[stmt->noperands++] = op;
+		stmt->operands[stmt->noperands++] = next_token(lexer);
 	}
 
 	return PARSE_SUCCESS;
@@ -91,19 +106,19 @@ static enum parse_status parse_operands(struct stmt *stmt, struct lexer *lexer)
 
 static enum parse_status parse_instruction(struct stmt *stmt, struct lexer *lexer)
 {
-	const struct token t = lexer_peek(lexer);
+	const struct token t = next_token(lexer);
 
 	if (t.type != TOKEN_INSTRUCTION)
 		return parser_error(&t, "expected instruction");
 	
-	stmt->instruction = lexer_next(lexer);
+	stmt->instruction = t;
 
 	return PARSE_SUCCESS;
 }
 
 enum parse_status parse_statement(struct stmt *stmt, struct lexer *lexer)
 {
-	if (lexer_peek(lexer).type == TOKEN_EOF)
+	if (peek_token(lexer).type == TOKEN_EOF)
 		return PARSE_EOF;
 
 	if (parse_instruction(stmt, lexer) != PARSE_SUCCESS
