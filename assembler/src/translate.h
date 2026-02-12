@@ -5,9 +5,17 @@
 	idk if i will commit to this
 */
 
+#include "parser.h"
 #include "instructions.h"
 
 #include <stdint.h>
+
+#define TRANSLATION_INVALID	(0)
+
+enum translation_status {
+	TRANSLATION_OK,
+	TRANSLATION_ERR
+};
 
 enum expected_operand {
 	OPERAND_BCD		= 001,
@@ -27,3 +35,4 @@ struct translation_entry {
 
 extern struct translation_entry translation_table[TOTAL_INSTRUCTIONS];
 
+enum translation_status translate_statement_to_opcode(const struct stmt *stmt);

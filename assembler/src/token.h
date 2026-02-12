@@ -47,3 +47,5 @@ struct token {
 	size_t col;
 	size_t line;
 };
+
+void token_error(const struct token *t, const char *fmt, ...);

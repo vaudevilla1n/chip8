@@ -1,5 +1,6 @@
 #include "parser.h"
 
+#include "token.h"
 #include "common.h"
 
 #include <stdio.h>
@@ -7,7 +8,7 @@
 /*
 	grammar 
 
-	stmt		::= instruction operands? eol
+	stmt		::= eol | instruction operands? eol
 
 	eol		::= '\n'
 
@@ -39,8 +40,8 @@
 
 static enum parse_status parser_error(const struct token *t, const char *msg)
 {
-	fprintf(stderr, "line %zu: col %zu: \'%.*s\': %s\n", t->line, t->col, (int)t->textlen, t->text, msg);
-	return PARSE_ERROR;
+	token_error(t, msg);
+	return PARSE_ERR;
 }
 
 static struct token peek_token(struct lexer *lexer)
@@ -84,7 +85,7 @@ static enum parse_status parse_operands(struct stmt *stmt, struct lexer *lexer)
 	stmt->noperands = 0;
 
 	if (!check_operand_token(lexer))
-		return PARSE_SUCCESS;
+		return PARSE_OK;
 
 	stmt->operands[stmt->noperands++] = next_token(lexer);
 
@@ -103,7 +104,7 @@ static enum parse_status parse_operands(struct stmt *stmt, struct lexer *lexer)
 		stmt->operands[stmt->noperands++] = next_token(lexer);
 	}
 
-	return PARSE_SUCCESS;
+	return PARSE_OK;
 }
 
 static enum parse_status parse_instruction(struct stmt *stmt, struct lexer *lexer)
@@ -115,24 +116,31 @@ static enum parse_status parse_instruction(struct stmt *stmt, struct lexer *lexe
 	
 	stmt->instruction = t;
 
-	return PARSE_SUCCESS;
+	return PARSE_OK;
+}
+
+static void skip_empty_lines(struct lexer *lexer)
+{
+	while (peek_token(lexer).type == TOKEN_EOL)
+		next_token(lexer);
 }
 
 enum parse_status parse_statement(struct stmt *stmt, struct lexer *lexer)
 {
-	while (peek_token(lexer).type == TOKEN_EOL)
-		next_token(lexer);
+	skip_empty_lines(lexer);
 
 	if (peek_token(lexer).type == TOKEN_EOF)
 		return PARSE_EOF;
 
-	if (parse_instruction(stmt, lexer) != PARSE_SUCCESS
-			|| parse_operands(stmt, lexer) != PARSE_SUCCESS)
-		return PARSE_ERROR;
+	if (parse_instruction(stmt, lexer) != PARSE_OK
+			|| parse_operands(stmt, lexer) != PARSE_OK)
+		return PARSE_ERR;
 	
 	const struct token t = next_token(lexer);
 	if (t.type != TOKEN_EOL)
 		return parser_error(&t, "junk at end of line");
 
-	return PARSE_SUCCESS;
+	skip_empty_lines(lexer);
+
+	return PARSE_OK;
 }

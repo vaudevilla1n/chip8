@@ -6,8 +6,8 @@
 
 enum parse_status {
 	PARSE_EOF,
-	PARSE_ERROR,
-	PARSE_SUCCESS,
+	PARSE_ERR,
+	PARSE_OK,
 };
 
 struct stmt {

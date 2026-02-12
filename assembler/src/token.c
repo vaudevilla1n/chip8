@@ -1,5 +1,8 @@
 #include "token.h"
 
+#include <stdio.h>
+#include <stdarg.h>
+
 const char *token_type_to_string(const enum token_type type)
 {
 	switch (type) {
@@ -25,4 +28,16 @@ const char *token_type_to_string(const enum token_type type)
 
 	default:	__builtin_unreachable();
 	}
+}
+
+void token_error(const struct token *t, const char *fmt, ...);
+{
+	va_list args;
+	va_start(args, fmt);
+
+	fprintf(stderr, "line %zu: col %zu: \'%.*s\': ", t->line, t->col, (int)t->textlen, t->text);
+	vfprintf(stderr, fmt, args);
+	fprintf(stderr, "\n");
+
+	va_end(args);
 }
