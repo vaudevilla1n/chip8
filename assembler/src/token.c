@@ -3,8 +3,10 @@
 const char *token_type_to_string(const enum token_type type)
 {
 	switch (type) {
-	case TOKEN_EOF:		return "TOKEN_EOF";
 	case TOKEN_INVALID:	return "TOKEN_INVALID";
+
+	case TOKEN_EOL:		return "TOKEN_EOL";
+	case TOKEN_EOF:		return "TOKEN_EOF";
 
 	case TOKEN_COMMA:	return "TOKEN_COMMA";
 	case TOKEN_LBRACKET:	return "TOKEN_LBRACKET";

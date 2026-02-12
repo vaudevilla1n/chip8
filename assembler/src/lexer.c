@@ -255,10 +255,22 @@ static void lex_eof(struct token *t)
 	t->textlen = 3;
 }
 
+
+static void skip_whitespace(struct lexer *lexer)
+{
+	for (;;) {
+		const char c = peek_char(lexer);
+
+		if (!isspace(c) || c == '\n')
+			break;
+
+		next_char(lexer);
+	}
+}
+
 static void lexer_advance(struct lexer *lexer)
 {
-	while (isspace(peek_char(lexer)))
-		next_char(lexer);
+	skip_whitespace(lexer);
 	
 	struct token t = {
 		.text = lexer->src + lexer->pos,
@@ -272,6 +284,8 @@ static void lexer_advance(struct lexer *lexer)
 	const char init = next_char(lexer);
 	switch (init) {
 	case '\0':	lex_eof(&t); break;
+
+	case '\n':	t.type = TOKEN_EOL; break;
 
 	case ',':	t.type = TOKEN_COMMA; break;
 

@@ -7,8 +7,10 @@
 #include <stdint.h>
 
 enum token_type {
-	TOKEN_EOF,
 	TOKEN_INVALID,
+
+	TOKEN_EOL,
+	TOKEN_EOF,
 
 	TOKEN_COMMENT,
 

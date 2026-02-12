@@ -7,7 +7,9 @@
 /*
 	grammar 
 
-	stmt		::= instruction operands?
+	stmt		::= instruction operands? eol
+
+	eol		::= '\n'
 
 	instruction	::= not typing allat
 
@@ -118,12 +120,19 @@ static enum parse_status parse_instruction(struct stmt *stmt, struct lexer *lexe
 
 enum parse_status parse_statement(struct stmt *stmt, struct lexer *lexer)
 {
+	while (peek_token(lexer).type == TOKEN_EOL)
+		next_token(lexer);
+
 	if (peek_token(lexer).type == TOKEN_EOF)
 		return PARSE_EOF;
 
 	if (parse_instruction(stmt, lexer) != PARSE_SUCCESS
 			|| parse_operands(stmt, lexer) != PARSE_SUCCESS)
 		return PARSE_ERROR;
+	
+	const struct token t = next_token(lexer);
+	if (t.type != TOKEN_EOL)
+		return parser_error(&t, "junk at end of line");
 
 	return PARSE_SUCCESS;
 }
