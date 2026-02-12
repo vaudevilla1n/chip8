@@ -55,8 +55,35 @@ static bool expect_valid_address(const struct token *operand)
 		return false;
 
 	const uint16_t addr = operand->as.num;
-	return (addr <= 0x0FFF);
+	if (addr <= 0x0FFF)
+		return true;
+
+	assembler_error(operand, "invalid memory address");
+
+	return false;
 }
+
+static bool expect_valid_value(const struct token *operand)
+{
+	if (operand->type == TOKEN_REGISTER)
+		return true;
+	
+	const uint16_t val = operand->as.num;
+	if (val <= 0xFF)
+		return true;
+
+	assembler_error(operand, "invalid operand value");
+
+	return false;
+}
+
+/*
+	ins
+	ins addr
+	ins reg
+	ins reg val
+	ins [reg]
+*/
 
 uint16_t opcode_from_statement(const struct stmt *stmt)
 {
@@ -95,67 +122,104 @@ uint16_t opcode_from_statement(const struct stmt *stmt)
 		if (!expect_valid_address(operand))
 			return OPCODE_INVALID;
 
-		return (0x1000) & operand->as.num;
+		return (0x1000) | operand->as.num;
 	} break;
 
 	case INS_CALL: {
-		todo("INS_CALL");
+		if (!expect_operand_count(stmt, 1))
+			return OPCODE_INVALID;
+
+		const struct token *operand = &stmt->operands[0];
+		if (!expect_valid_address(operand))
+			return OPCODE_INVALID;
+
+		return (0x2000) | operand->as.num;
 	} break;
 
 	case INS_SE: {
-		todo("INS_SE");
+		if (!expect_operand_count(stmt, 2))
+			return OPCODE_INVALID;
+
+		const struct token *operand0 = &stmt->operands[0];
+		const struct token *operand1 = &stmt->operands[1];
+
+		if (!expect_register(operand0))
+			return OPCODE_INVALID;
+
+		if (!expect_valid_value(operand1))
+			return OPCODE_INVALID;
+
+		if (operand1->type == TOKEN_NUMBER)
+			return (0x3000) | ((uint16_t)operand0->as.reg << 8) | (operand1->as.num);
+		else
+			return (0x5000) | ((uint16_t)operand0->as.reg << 8) | ((uint16_t)operand1->as.reg << 4);
 	} break;
 
 	case INS_SNE: {
-		todo("INS_SNE");
+		if (!expect_operand_count(stmt, 2))
+			return OPCODE_INVALID;
+
+		const struct token *operand0 = &stmt->operands[0];
+		const struct token *operand1 = &stmt->operands[1];
+
+		if (!expect_register(operand0))
+			return OPCODE_INVALID;
+
+		if (!expect_valid_value(operand1))
+			return OPCODE_INVALID;
+
+		if (operand1->type == TOKEN_NUMBER)
+			return (0x3000) | ((uint16_t)operand0->as.reg << 8) | (operand1->as.num);
+		else
+			return (0x5000) | ((uint16_t)operand0->as.reg << 8) | ((uint16_t)operand1->as.reg << 4);
 	} break;
 
 	case INS_LD: {
-		todo("INS_LD");
+		return OPCODE_INVALID;
 	} break;
 
 	case INS_ADD: {
-		todo("INS_ADD");
+		return OPCODE_INVALID;
 	} break;
 
 	case INS_SUB: {
-		todo("INS_SUB");
+		return OPCODE_INVALID;
 	} break;
 
 	case INS_SUBN: {
-		todo("INS_SUBN");
+		return OPCODE_INVALID;
 	} break;
 
 	case INS_OR: {
-		todo("INS_OR");
+		return OPCODE_INVALID;
 	} break;
 
 	case INS_XOR: {
-		todo("INS_XOR");
+		return OPCODE_INVALID;
 	} break;
 
 	case INS_AND: {
-		todo("INS_AND");
+		return OPCODE_INVALID;
 	} break;
 
 	case INS_SHR: {
-		todo("INS_SHR");
+		return OPCODE_INVALID;
 	} break;
 
 	case INS_SHL: {
-		todo("INS_SHL");
+		return OPCODE_INVALID;
 	} break;
 
 	case INS_RND: {
-		todo("INS_RND");
+		return OPCODE_INVALID;
 	} break;
 
 	case INS_SKP: {
-		todo("INS_SKP");
+		return OPCODE_INVALID;
 	} break;
 
 	case INS_SKNP: {
-		todo("INS_SKNP");
+		return OPCODE_INVALID;
 	} break;
 
 	default:	return OPCODE_INVALID;

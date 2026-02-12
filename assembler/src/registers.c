@@ -20,17 +20,29 @@ const char *registers_to_string(const enum registers reg)
 	case REG_VE:	return "VE";
 	case REG_VF:	return "VF";
 
+	case REG_I:	return "I";
+
 	default:	__builtin_unreachable();
 	}
 }
 
 enum registers register_lookup(const char *id, const size_t len)
 {
-	if (len == 2 && id[0] == 'V') {
+	if (len == 1 && id[0] == 'I')
+		return REG_I;
+	
+	if (len != 2)
+		return REG_INVALID;
+
+	if (id[0] == 'V') {
 		if ('0' <= id[1] && id[1] <= '9')
 			return id[1] - '0';
 		if ('A' <= id[1] && id[1] <= 'F')
 			return id[1] - 'A' + 10;
+	} else if (id[0] == 'S' && id[1] == 'T') {
+		return REG_ST;
+	} else if (id[0] == 'D' && id[1] == 'T') {
+		return REG_DT;
 	}
 
 	return REG_INVALID;

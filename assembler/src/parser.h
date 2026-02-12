@@ -3,13 +3,32 @@
 #include "lexer.h"
 #include "token.h"
 
-#define STATEMENT_MAX_OPERANDS	2
+enum parse_status {
+	PARSE_EOF,
+	PARSE_ERROR,
+	PARSE_SUCCESS,
+};
+
+enum operand_type {
+	OPERAND_REGISTER,
+	OPERAND_NUMBER,
+	OPERAND_FONT,
+	OPERAND_BCD,
+	OPERAND_MEMORY,
+};
+
+#define PARSE_OPERANDS_MAX	3
+
+struct operand {
+	enum operand_type type;
+	struct token val;
+};
 
 struct stmt {
 	struct token instruction;
 
-	struct token operands[STATEMENT_MAX_OPERANDS];
 	size_t noperands;
+	struct operand operands[PARSE_OPERANDS_MAX];
 };
 
-int parse_stmt(struct stmt *stmt, struct lexer *lexer);
+enum parse_status parse_statement(struct stmt *stmt, struct lexer *lexer);

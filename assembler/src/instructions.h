@@ -18,6 +18,8 @@ enum instruction {
 
 	INS_RND,
 
+	INS_DRW,
+
 	INS_SKP, INS_SKNP,
 
 	TOTAL_INSTRUCTIONS,

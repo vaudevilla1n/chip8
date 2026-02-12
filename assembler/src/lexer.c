@@ -9,14 +9,6 @@
 #include <string.h>
 #include <limits.h>
 
-struct lexer lexer_new(const char *src, const size_t srclen)
-{
-	return (struct lexer){
-		.src = src,
-		.srclen = srclen,
-	};
-}
-
 static char peek_char(const struct lexer *lexer)
 {
 	return (lexer->pos < lexer->srclen) ? lexer->src[lexer->pos] : '\0';
@@ -30,7 +22,7 @@ static char next_char(struct lexer *lexer)
 	const char c = lexer->src[lexer->pos++];
 
 	if (c == '\n') {
-		lexer->col = 0;
+		lexer->col = 1;
 		lexer->line++;
 	} else {
 		lexer->col++;
@@ -45,6 +37,7 @@ static void invalid_token(struct token *t, const char *err)
 	t->as.err = err;
 }
 
+
 static inline bool ishexdigit(const char d)
 {
 	return (isdigit(d) || ('a' <= d && d <= 'f') || ('A' <= d && d <= 'F'));
@@ -55,21 +48,14 @@ static inline bool isoctdigit(const char d)
 	return ('0' <= d && d <= '7');
 }
 
-static void lex_number(struct lexer *lexer, struct token *t)
+static void lex_number(struct lexer *lexer, struct token *t, const size_t start, const char init)
 {
-	t->type = TOKEN_NUMBER;
-
-	const size_t start = lexer->pos;
-
-	const char delim = next_char(lexer);
-	if (delim == '0' && (peek_char(lexer) == 'x' || peek_char(lexer) == 'X')) {
+	if (init == '0' && (peek_char(lexer) == 'x' || peek_char(lexer) == 'X')) {
 		next_char(lexer);
 
 		while (ishexdigit(peek_char(lexer)))
 			next_char(lexer);
-	} else if (delim == '0') {
-		next_char(lexer);
-
+	} else if (init == '0') {
 		while (isoctdigit(peek_char(lexer)))
 			next_char(lexer);
 	} else {
@@ -81,11 +67,14 @@ static void lex_number(struct lexer *lexer, struct token *t)
 
 	const uint32_t x = strtoul(t->text, nullptr, 0);
 
-	if (errno == ERANGE || x > USHRT_MAX)
+	if (errno == ERANGE || x > USHRT_MAX) {
 		invalid_token(t, "number literal out of range");
-	else
+	} else {
+		t->type = TOKEN_NUMBER;
 		t->as.num = (uint16_t)x;
+	}
 }
+
 
 static bool set_register_token(struct token *t)
 {
@@ -113,10 +102,8 @@ static bool set_instruction_token(struct token *t)
 	return true;
 }
 
-static void lex_keyword(struct lexer *lexer, struct token *t)
+static void lex_identifier(struct lexer *lexer, struct token *t, const size_t start)
 {
-	const size_t start = lexer->pos;
-
 	while (isalnum(peek_char(lexer)))
 		next_char(lexer);
 
@@ -131,7 +118,48 @@ static void lex_keyword(struct lexer *lexer, struct token *t)
 	invalid_token(t, "unknown identifier");
 }
 
-struct token lexer_next(struct lexer *lexer)
+
+static void lex_memory(struct lexer *lexer, struct token *t)
+{
+	if (peek_char(lexer) != 'I') {
+		invalid_token(t, "invalid register: only the I register can be used here");
+		return;
+	}
+	next_char(lexer);
+
+	if (peek_char(lexer) != ']') {
+		invalid_token(t, "missing closing bracket");
+		return;
+	}
+	next_char(lexer);
+
+	t->type = TOKEN_MEMORY;
+}
+
+
+static void lex_comment(struct lexer *lexer, struct token *t)
+{
+	for (;;) {
+		const char c = peek_char(lexer);
+
+		if (!c || c == '\n')
+			break;
+
+		next_char(lexer);
+	}
+
+	t->type = TOKEN_COMMENT;
+}
+
+
+static void lex_eof(struct token *t)
+{
+	t->type = TOKEN_EOF;
+	t->text = "EOF";
+	t->textlen = 3;
+}
+
+static void lexer_advance(struct lexer *lexer)
 {
 	while (isspace(peek_char(lexer)))
 		next_char(lexer);
@@ -143,50 +171,64 @@ struct token lexer_next(struct lexer *lexer)
 		.line = lexer->line,
 	};
 
-	const char c = peek_char(lexer);
+	const size_t start = lexer->pos;
 
-	switch (c) {
-	case '\0': {
-		t.type = TOKEN_EOF;
-		t.textlen = 0;
-	} break;
+	const char init = next_char(lexer);
+	switch (init) {
+	case '\0':	lex_eof(&t); break;
 
-	case ',': {
-		t.type = TOKEN_COMMA;
-		t.textlen = 1;
+	case ',':	t.type = TOKEN_COMMA; break;
 
-		next_char(lexer);
-	} break;
+	case 'B':	t.type = TOKEN_BCD; break;
+
+	case 'F':	t.type = TOKEN_FONT; break;
+
+	case '[':	lex_memory(lexer, &t); break;
+
+	case ';':	lex_comment(lexer, &t); break;
 
 	default: {
-		if (isdigit(c)) {
-			lex_number(lexer, &t);
-		} else if (isalpha(c)) {
-			lex_keyword(lexer, &t);
-		} else {
-			t.textlen = 1;
+		if (isdigit(init))
+			lex_number(lexer, &t, start, init);
+		else if (isalpha(init))
+			lex_identifier(lexer, &t, start);
+		else
 			invalid_token(&t, "unknown token");
-
-			next_char(lexer);
-		}
 	} break;
 	}
 
-	return t;
+	if (!t.textlen)
+		t.textlen = lexer->pos - start;
+	
+	lexer->token = t;
+}
+
+struct lexer lexer_new(const char *src, const size_t srclen)
+{
+	struct lexer lexer = {
+		.src = src,
+		.srclen = srclen,
+
+		.line = 1,
+		.col = 1,
+	};
+
+	lexer_advance(&lexer);
+
+	return lexer;
+}
+
+struct token lexer_next(struct lexer *lexer)
+{
+	const struct token ret = lexer->token;
+
+	lexer_advance(lexer);
+
+	return ret;
 }
 
 struct token lexer_peek(struct lexer *lexer)
 {
-	const size_t pos = lexer->pos;
-	const size_t col = lexer->col;
-	const size_t line = lexer->line;
-
-	struct token t = lexer_next(lexer);
-
-	lexer->pos = pos;
-	lexer->col = col;
-	lexer->line = line;
-
-	return t;
+	return lexer->token;
 }
 

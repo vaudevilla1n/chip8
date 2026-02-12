@@ -12,6 +12,8 @@ struct lexer {
 
 	size_t col;
 	size_t line;
+
+	struct token token;
 };
 
 struct lexer lexer_new(const char *src, const size_t srclen);

@@ -23,6 +23,7 @@ static const char *instruction_identifiers[TOTAL_INSTRUCTIONS] = {
 	[INS_SHR] = "shr",
 	[INS_SHL] = "shl",
 	[INS_RND] = "rnd",
+	[INS_DRW] = "drw",
 	[INS_SKP] = "skp",
 	[INS_SKNP] = "sknp",
 };
