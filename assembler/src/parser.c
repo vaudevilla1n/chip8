@@ -95,7 +95,7 @@ static enum parse_status parse_operands(struct stmt *stmt, struct lexer *lexer)
 			return parser_error(&t, (t.type == TOKEN_INVALID) ? t.as.err : "expected operand");
 		}
 
-		if (stmt->noperands >= PARSE_OPERANDS_MAX)
+		if (stmt->noperands >= INSTRUCTION_OPERAND_MAX)
 			return parser_error(&stmt->instruction, "too many operands");
 
 		stmt->operands[stmt->noperands++] = next_token(lexer);

@@ -18,5 +18,3 @@ enum registers {
 };
 
 const char *registers_to_string(const enum registers reg);
-
-enum registers register_lookup(const char *id, const size_t len);

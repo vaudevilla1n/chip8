@@ -9,6 +9,102 @@
 #include <string.h>
 #include <limits.h>
 
+#define INSTRUCTION_TABLE_CAPACITY		(TOTAL_INSTRUCTIONS)
+#define INSTRUCTION_TABLE_COLLISION_MAX		(TOTAL_INSTRUCTIONS)
+
+struct instruction_lookup_entry {
+	const char *key;
+	enum instruction val;
+};
+
+static struct instruction_lookup_entry instruction_lookup_table[INSTRUCTION_TABLE_CAPACITY][INSTRUCTION_TABLE_COLLISION_MAX];
+
+static uint64_t hash(const char *key)
+{
+	uint64_t h = 805306457;
+
+	h ^= (uint64_t)key[0] << 16;
+	h ^= (uint64_t)key[1];
+
+	return h;
+}
+
+static void instruction_table_insert(const char *key, const enum instruction val)
+{
+	const uint64_t h = hash(key);
+	const size_t i = h % INSTRUCTION_TABLE_CAPACITY;
+	
+	struct instruction_lookup_entry e = {
+		.key = key,
+		.val = val,
+	};
+
+	size_t j;
+	for (j = 0; instruction_lookup_table[i][j].key; j++)
+		;
+	
+	instruction_lookup_table[i][j] = e;
+}
+
+static void instruction_lookup_table_init(void)
+{
+	for (enum instruction i = 0; i < TOTAL_INSTRUCTIONS; i++) {
+		const char *key = instruction_to_string(i);
+
+		instruction_table_insert(key, i);
+	}
+}
+
+static enum instruction lookup_instruction(const char *id, const size_t len)
+{
+	/*
+		iteration + strncmp 
+
+		real	0m0.008s
+		user	0m0.003s
+		sys	0m0.004s
+	 */
+
+	if (len < 2)
+		return INS_INVALID;
+
+	const uint64_t h = hash(id);
+	const size_t i = h % INSTRUCTION_TABLE_CAPACITY;
+
+	for (size_t j = 0; instruction_lookup_table[i][j].key; j++) {
+		struct instruction_lookup_entry *e = &instruction_lookup_table[i][j];
+
+		if (!strncmp(id, e->key, len))
+			return e->val;
+	}
+	
+	return INS_INVALID;
+}
+
+
+static enum registers lookup_register(const char *id, const size_t len)
+{
+	if (len == 1 && id[0] == 'I')
+		return REG_I;
+	
+	if (len != 2)
+		return REG_INVALID;
+
+	if (id[0] == 'V') {
+		if ('0' <= id[1] && id[1] <= '9')
+			return id[1] - '0';
+		if ('A' <= id[1] && id[1] <= 'F')
+			return id[1] - 'A' + 10;
+	} else if (id[0] == 'S' && id[1] == 'T') {
+		return REG_ST;
+	} else if (id[0] == 'D' && id[1] == 'T') {
+		return REG_DT;
+	}
+
+	return REG_INVALID;
+}
+
+
 static char peek_char(const struct lexer *lexer)
 {
 	return (lexer->pos < lexer->srclen) ? lexer->src[lexer->pos] : '\0';
@@ -78,7 +174,7 @@ static void lex_number(struct lexer *lexer, struct token *t, const size_t start,
 
 static bool set_register_token(struct token *t)
 {
-	const enum registers reg = register_lookup(t->text, t->textlen);
+	const enum registers reg = lookup_register(t->text, t->textlen);
 
 	if (reg == REG_INVALID)
 		return false;
@@ -91,7 +187,7 @@ static bool set_register_token(struct token *t)
 
 static bool set_instruction_token(struct token *t)
 {
-	const enum instruction ins = instruction_lookup(t->text, t->textlen);
+	const enum instruction ins = lookup_instruction(t->text, t->textlen);
 
 	if (ins == INS_INVALID)
 		return false;
@@ -205,6 +301,8 @@ static void lexer_advance(struct lexer *lexer)
 
 struct lexer lexer_new(const char *src, const size_t srclen)
 {
+	instruction_lookup_table_init();
+
 	struct lexer lexer = {
 		.src = src,
 		.srclen = srclen,

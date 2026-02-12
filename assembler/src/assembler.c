@@ -41,7 +41,7 @@ static void print_operand(const struct token *operand)
 	case TOKEN_BCD:		
 	case TOKEN_MEMORY:	printf("%.*s", (int)operand->textlen, operand->text); break;
 
-	default:	__builtin_unreachable();
+	default:		__builtin_unreachable();
 	}
 }
 
@@ -84,8 +84,6 @@ int assemble_source_file(const char *path)
 		perror(path);
 		return 1;
 	}
-
-	instruction_lookup_table_init();
 
 	test_lexer(&src);
 	test_parser(&src);

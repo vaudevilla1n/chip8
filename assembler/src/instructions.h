@@ -2,6 +2,8 @@
 
 #include <stddef.h>
 
+#define INSTRUCTION_OPERAND_MAX	3
+
 enum instruction {
 	INS_SYS,
 
@@ -28,6 +30,3 @@ enum instruction {
 };
 
 const char *instruction_to_string(const enum instruction ins);
-
-void instruction_lookup_table_init(void);
-enum instruction instruction_lookup(const char *id, const size_t len);
