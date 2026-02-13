@@ -39,12 +39,6 @@
 	operand	::= register | number | special | address
 */
 
-static enum parse_status parser_error(const struct token *t, const char *msg)
-{
-	token_error(t, msg);
-	return PARSE_ERR;
-}
-
 static struct token peek_token(struct lexer *lexer)
 {
 	while(lexer_peek(lexer).type == TOKEN_COMMENT)
@@ -61,9 +55,36 @@ static struct token next_token(struct lexer *lexer)
 	return lexer_next(lexer);
 }
 
+static void skip_statement(struct lexer *lexer)
+{
+	while (peek_token(lexer).type != TOKEN_EOL)
+		next_token(lexer);
+}
+
+static enum parse_status statement_error(struct lexer *lexer, const struct token *t, const char *msg)
+{
+	skip_statement(lexer);
+	token_error(t, msg);
+	return PARSE_ERR;
+}
+
 static inline bool check_token(struct lexer *lexer, const enum token_type type)
 {
 	return peek_token(lexer).type == type;
+}
+
+static bool expect_token(struct lexer *lexer, const enum token_type type, const char *msg, struct token *t)
+{
+	struct token n = lexer_next(lexer);
+
+	if (n.type != type) {
+		statement_error(lexer, &n, msg);
+		return false;
+	}
+	
+	if (t)
+		*t = n;
+	return true;
 }
 
 static bool check_operand_token(struct lexer *lexer)
@@ -86,7 +107,7 @@ static enum parse_status parse_operands(struct lexer *lexer, struct stmt *stmt)
 {
 	stmt->noperands = 0;
 
-	if (!check_operand_token(lexer))
+	if (check_token(lexer, TOKEN_EOL))
 		return PARSE_OK;
 
 	stmt->operands[stmt->noperands++] = next_token(lexer);
@@ -97,11 +118,11 @@ static enum parse_status parse_operands(struct lexer *lexer, struct stmt *stmt)
 		if (!check_operand_token(lexer)) {
 			const struct token t = next_token(lexer);
 
-			return parser_error(&t, (t.type == TOKEN_INVALID) ? t.as.err : "expected operand");
+			return statement_error(lexer, &t, (t.type == TOKEN_INVALID) ? t.as.err : "expected operand");
 		}
 
 		if (stmt->noperands >= INSTRUCTION_OPERAND_MAX)
-			return parser_error(&stmt->instruction, "too many operands");
+			return statement_error(lexer, &stmt->instruction, "too many operands");
 
 		stmt->operands[stmt->noperands++] = next_token(lexer);
 	}
@@ -111,10 +132,9 @@ static enum parse_status parse_operands(struct lexer *lexer, struct stmt *stmt)
 
 static enum parse_status parse_instruction(struct lexer *lexer, struct stmt *stmt)
 {
-	const struct token t = next_token(lexer);
-
-	if (t.type != TOKEN_INSTRUCTION)
-		return parser_error(&t, "expected instruction");
+	struct token t;
+	if (!expect_token(lexer, TOKEN_INSTRUCTION, "expected instruction", &t))
+		return PARSE_ERR;
 	
 	stmt->instruction = t;
 
@@ -138,9 +158,8 @@ enum parse_status parse_statement(struct lexer *lexer, struct stmt *stmt)
 			|| parse_operands(lexer, stmt) != PARSE_OK)
 		return PARSE_ERR;
 	
-	const struct token t = next_token(lexer);
-	if (t.type != TOKEN_EOL)
-		return parser_error(&t, "junk at end of line");
+	if (!expect_token(lexer, TOKEN_EOL, "junk at end of line", nullptr))
+		return PARSE_ERR;
 
 	skip_empty_lines(lexer);
 

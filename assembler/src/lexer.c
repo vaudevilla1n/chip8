@@ -14,6 +14,7 @@
 
 struct instruction_lookup_entry {
 	const char *key;
+	size_t keylen;
 	enum instruction val;
 };
 
@@ -36,6 +37,7 @@ static void instruction_table_insert(const char *key, const enum instruction val
 	
 	struct instruction_lookup_entry e = {
 		.key = key,
+		.keylen = strlen(key),
 		.val = val,
 	};
 
@@ -74,7 +76,7 @@ static enum instruction lookup_instruction(const char *id, const size_t len)
 	for (size_t j = 0; instruction_lookup_table[i][j].key; j++) {
 		struct instruction_lookup_entry *e = &instruction_lookup_table[i][j];
 
-		if (!strncmp(id, e->key, len))
+		if (!strncmp(id, e->key, e->keylen))
 			return e->val;
 	}
 	

@@ -198,13 +198,12 @@ int assemble_source_file(const char *src_path, const char *rom_path)
 	if (err)
 		return err;
 
-	if (!err && write_file(&rom, rom_path)) {
+	if (write_file(&rom, rom_path)) {
 		perror(rom_path);
 		err = 1;
-	}
-
-	if (!err)
+	} else {
 		report_assembled_rom(&rom, rom_path);
+	}
 
 	return err;
 #endif
