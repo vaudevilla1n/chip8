@@ -1,6 +1,6 @@
 emulator/chip8
 assembler/chip8_as
 assembler/*.c8
-*/*.out
+*a.out
 */*.rom
 rom
