@@ -9,6 +9,8 @@
 	exit(1);
 }
 
+#define DEFAULT_ROM_PATH	"./a.out"
+
 int main(int argc, char **argv)
 {
 	if (argc != 2)
@@ -16,8 +18,8 @@ int main(int argc, char **argv)
 	
 	const char *path = argv[1];
 
-	if (assemble_source_file(path)) {
-		fprintf(stderr, "invalid chip8 assembly\n");
+	if (assemble_source_file(path, DEFAULT_ROM_PATH)) {
+		fprintf(stderr, "assembling unsuccessful :(\n");
 		return 1;
 	}
 

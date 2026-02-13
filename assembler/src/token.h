@@ -21,6 +21,8 @@ enum token_type {
 	TOKEN_BCD,
 	TOKEN_FONT,
 
+	TOKEN_KEY,
+
 	TOKEN_MEMORY,
 
 	TOKEN_NUMBER,

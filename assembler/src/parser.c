@@ -8,7 +8,7 @@
 /*
 	grammar 
 
-	stmt		::= eol | instruction operands? eol
+	stmt		::= instruction operands? eol
 
 	eol		::= '\n'
 
@@ -16,8 +16,9 @@
 
 	operands	::= operand ( ',' operand )*
 
-	operand		::= font | bcd | address | register | number
+	operand		::= key | font | bcd | address | register | number
 
+	key		::= 'K'
 	font		::= 'F'
 	bcd		::= 'B'
 
@@ -72,6 +73,7 @@ static bool check_operand_token(struct lexer *lexer)
 	case TOKEN_NUMBER:
 	case TOKEN_FONT:
 	case TOKEN_BCD:
+	case TOKEN_KEY:
 	case TOKEN_MEMORY:
 		return true;
 
@@ -80,7 +82,7 @@ static bool check_operand_token(struct lexer *lexer)
 	}
 }
 
-static enum parse_status parse_operands(struct stmt *stmt, struct lexer *lexer)
+static enum parse_status parse_operands(struct lexer *lexer, struct stmt *stmt)
 {
 	stmt->noperands = 0;
 
@@ -107,7 +109,7 @@ static enum parse_status parse_operands(struct stmt *stmt, struct lexer *lexer)
 	return PARSE_OK;
 }
 
-static enum parse_status parse_instruction(struct stmt *stmt, struct lexer *lexer)
+static enum parse_status parse_instruction(struct lexer *lexer, struct stmt *stmt)
 {
 	const struct token t = next_token(lexer);
 
@@ -125,15 +127,15 @@ static void skip_empty_lines(struct lexer *lexer)
 		next_token(lexer);
 }
 
-enum parse_status parse_statement(struct stmt *stmt, struct lexer *lexer)
+enum parse_status parse_statement(struct lexer *lexer, struct stmt *stmt)
 {
 	skip_empty_lines(lexer);
 
 	if (peek_token(lexer).type == TOKEN_EOF)
 		return PARSE_EOF;
 
-	if (parse_instruction(stmt, lexer) != PARSE_OK
-			|| parse_operands(stmt, lexer) != PARSE_OK)
+	if (parse_instruction(lexer, stmt) != PARSE_OK
+			|| parse_operands(lexer, stmt) != PARSE_OK)
 		return PARSE_ERR;
 	
 	const struct token t = next_token(lexer);

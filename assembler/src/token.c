@@ -20,6 +20,8 @@ const char *token_type_to_string(const enum token_type type)
 	case TOKEN_BCD:		return "TOKEN_BCD";
 	case TOKEN_FONT:	return "TOKEN_FONT";
 
+	case TOKEN_KEY:	return "TOKEN_KEY";
+
 	case TOKEN_MEMORY:	return "TOKEN_MEMORY";
 
 	case TOKEN_NUMBER:	return "TOKEN_NUMBER";
@@ -30,7 +32,7 @@ const char *token_type_to_string(const enum token_type type)
 	}
 }
 
-void token_error(const struct token *t, const char *fmt, ...);
+void token_error(const struct token *t, const char *fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);

@@ -149,9 +149,19 @@ static void lex_number(struct lexer *lexer, struct token *t, const size_t start,
 	if (init == '0' && (peek_char(lexer) == 'x' || peek_char(lexer) == 'X')) {
 		next_char(lexer);
 
+		if (!ishexdigit(peek_char(lexer))) {
+			invalid_token(t, "erroneous hexadecimal delimiter");
+			return;
+		}
+
 		while (ishexdigit(peek_char(lexer)))
 			next_char(lexer);
 	} else if (init == '0') {
+		if (!isoctdigit(peek_char(lexer))) {
+			invalid_token(t, "erroneous octal delimiter");
+			return;
+		}
+
 		while (isoctdigit(peek_char(lexer)))
 			next_char(lexer);
 	} else {
@@ -256,6 +266,14 @@ static void lex_eof(struct token *t)
 }
 
 
+static void lex_eol(struct token *t)
+{
+	t->type = TOKEN_EOL;
+	t->text = "EOL";
+	t->textlen = 3;
+}
+
+
 static void skip_whitespace(struct lexer *lexer)
 {
 	for (;;) {
@@ -285,13 +303,15 @@ static void lexer_advance(struct lexer *lexer)
 	switch (init) {
 	case '\0':	lex_eof(&t); break;
 
-	case '\n':	t.type = TOKEN_EOL; break;
+	case '\n':	lex_eol(&t); break;
 
 	case ',':	t.type = TOKEN_COMMA; break;
 
 	case 'B':	t.type = TOKEN_BCD; break;
 
 	case 'F':	t.type = TOKEN_FONT; break;
+
+	case 'K':	t.type = TOKEN_KEY; break;
 
 	case '[':	lex_memory(lexer, &t); break;
 

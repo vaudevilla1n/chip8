@@ -4,6 +4,7 @@
 #include "token.h"
 #include "lexer.h"
 #include "parser.h"
+#include "translate.h"
 #include "instructions.h"
 
 #include <stdio.h>
@@ -58,35 +59,72 @@ static void print_statement(const struct stmt *stmt)
 	printf("\n");
 }
 
-static void test_parser(struct file *src)
+static void print_opcode(const uint16_t opcode)
+{
+	printf("(0x%.4hX)\n", opcode);
+}
+
+static int write_opcode(struct file *rom, const uint16_t opcode)
+{
+	if (rom->len + 2 > ROM_SIZE_MAX)
+		return 1;
+
+	rom->dat[rom->len] = (opcode >> 8) & 0xFF;
+	rom->dat[rom->len + 1] = opcode & 0xFF;
+	rom->len += 2;
+
+	return 0;
+}
+
+static void test_translation(struct file *src, const char *rom_path)
 {
 	struct lexer lexer = lexer_new(src->dat, src->len);
 
+	struct file rom = {
+		.dat = (char[ROM_SIZE_MAX]){ 0 },
+		.len = 0,
+	};
+
 	struct stmt stmt;
 	for (;;) {
-		const enum parse_status status = parse_statement(&stmt, &lexer);
+		const enum parse_status status = parse_statement(&lexer, &stmt);
 
 		if (status == PARSE_EOF)
 			break;
 
-		if (status == PARSE_ERROR)
+		if (status == PARSE_ERR)
 			continue;
 
 		print_statement(&stmt);
+
+		uint16_t opcode;
+		if (translate_statement_to_opcode(&stmt, &opcode) != TRANSLATE_OK)
+			continue;
+
+		print_opcode(opcode);
+
+		if (write_opcode(&rom, opcode)) {
+			fprintf(stderr, "rom is too large, truncated to %d bytes\n", ROM_SIZE_MAX);
+			break;
+		}
 	}
+
+	if (write_file(&rom, rom_path))
+		perror(rom_path);
+	else
+		printf("assembled %zu byte rom\n", rom.len);
 }
 
-int assemble_source_file(const char *path)
+int assemble_source_file(const char *src_path, const char *rom_path)
 {
-	struct file src = read_file(path);
-
+	struct file src = read_file(src_path);
 	if (!src.dat) {
-		perror(path);
+		perror(src_path);
 		return 1;
 	}
 
 	test_lexer(&src);
-	test_parser(&src);
+	test_translation(&src, rom_path);
 
 	close_file(&src);
 
