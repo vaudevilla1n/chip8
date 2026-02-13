@@ -175,128 +175,123 @@ static enum translate_status translate_ld(const struct stmt *stmt, uint16_t *opc
 	return TRANSLATE_OK;
 }
 
-enum translate_status translate_statement_to_opcode(const struct stmt *stmt, uint16_t *opcode)
+static enum translate_status translate_basic_instruction(const struct stmt *stmt, const uint16_t base_opcode, uint16_t *opcode)
+{
+	if (!expect_operand_count(stmt, 0))
+		return TRANSLATE_ERR;
+
+	*opcode = (base_opcode);
+	
+	return TRANSLATE_OK;
+}
+
+static enum translate_status translate_skip(const struct stmt *stmt, const uint16_t base_opcode_byte_reg, const uint16_t base_opcode_byte_val, uint16_t *opcode)
+{
+	const struct token *op0 = &stmt->operands[0];
+	const struct token *op1 = &stmt->operands[1];
+
+	if (!expect_operand_count(stmt, 2) || !expect_byte_reg(op0))
+		return TRANSLATE_ERR;
+
+	if (is_byte(op1)) {
+		*opcode = (base_opcode_byte_val) | (op0->as.reg << 8) | (op1->as.num);
+	} else if (is_byte_reg(op1)) {
+		*opcode = (base_opcode_byte_reg) | (op0->as.reg << 8) | (op1->as.reg << 4);
+	} else {
+		token_error(op1, "invalid operand: expected a byte value or register");
+		return TRANSLATE_ERR;
+	}
+
+	return TRANSLATE_OK;
+}
+
+static enum translate_status translate_skip_pressed(const struct stmt *stmt, const uint16_t base_opcode, uint16_t *opcode)
+{
+	const struct token *op0 = &stmt->operands[0];
+
+	if (!expect_operand_count(stmt, 1) || !expect_byte_reg(op0))
+		return TRANSLATE_ERR;
+
+	*opcode = (base_opcode) | (op0->as.reg << 8);
+
+	return TRANSLATE_OK;
+}
+
+static enum translate_status translate_jump(const struct stmt *stmt, const uint16_t base_opcode, uint16_t *opcode)
+{
+	const struct token *op0 = &stmt->operands[0];
+
+	if (!expect_operand_count(stmt, 1) || !expect_addr(op0))
+		return TRANSLATE_ERR;
+
+	*opcode = (base_opcode) | (op0->as.num);
+
+	return TRANSLATE_OK;
+}
+
+static enum translate_status translate_rnd(const struct stmt *stmt, uint16_t *opcode)
+{
+	const struct token *op0 = &stmt->operands[0];
+	const struct token *op1 = &stmt->operands[1];
+
+	if (!expect_operand_count(stmt, 2) || !expect_byte_reg(op0) || !expect_byte(op1))
+		return TRANSLATE_ERR;
+
+	*opcode = (0xC000) | (op0->as.reg << 8) | (op1->as.num);
+
+	return TRANSLATE_OK;
+}
+
+static enum translate_status translate_drw(const struct stmt *stmt, uint16_t *opcode)
 {
 	const struct token *op0 = &stmt->operands[0];
 	const struct token *op1 = &stmt->operands[1];
 	const struct token *op2 = &stmt->operands[2];
 
-	unused(op2);
+	if (!expect_operand_count(stmt, 3)
+			|| !expect_byte_reg(op0) || !expect_byte_reg(op1)
+			|| !expect_nibble(op2))
+		return TRANSLATE_ERR;
 
+	*opcode = (0xD000) | (op0->as.reg << 8) | (op1->as.reg << 4) | (op2->as.num);
+
+	return TRANSLATE_OK;
+}
+
+enum translate_status translate_statement_to_opcode(const struct stmt *stmt, uint16_t *opcode)
+{
 	switch (stmt->instruction.as.ins) {
-	case INS_SYS: {
-		if (!expect_operand_count(stmt, 1) || !expect_addr(op0))
-			return TRANSLATE_ERR;
-
-		*opcode = (0x0000) | (op0->as.num);
-	} break;
-
-
-	case INS_CLS: {
-		if (!expect_operand_count(stmt, 0))
-			return TRANSLATE_ERR;
-
-		*opcode = (0x00E0);
-	} break;
-
-
-	case INS_RET: {
-		if (!expect_operand_count(stmt, 0))
-			return TRANSLATE_ERR;
-
-		*opcode = (0x00EE);
-	} break;
+	case INS_SYS:	return translate_jump(stmt, 0x0000, opcode);
+	case INS_CALL:	return translate_jump(stmt, 0x2000, opcode);
 
 	case INS_JP:	return translate_jp(stmt, opcode);
 
-	case INS_CALL: {
-		if (!expect_operand_count(stmt, 1) || !expect_addr(op0))
-			return TRANSLATE_ERR;
+	case INS_CLS:	return translate_basic_instruction(stmt, 0x00E0, opcode);
+	case INS_RET:	return translate_basic_instruction(stmt, 0x00EE, opcode);
 
-		*opcode = (0x2000) | (op0->as.num);
-	} break;
-
-
-	case INS_SE: {
-		if (!expect_operand_count(stmt, 2) || !expect_byte_reg(op0))
-			return TRANSLATE_ERR;
-
-		if (is_byte(op1)) {
-			*opcode = (0x3000) | (op0->as.reg << 8) | (op1->as.num);
-		} else if (is_byte_reg(op1)) {
-			*opcode = (0x5000) | (op0->as.reg << 8) | (op1->as.reg << 4);
-		} else {
-			token_error(op1, "invalid operand: expected a byte value or register");
-			return TRANSLATE_ERR;
-		}
-	} break;
-
-	case INS_SNE: {
-		if (!expect_operand_count(stmt, 2) || !expect_byte_reg(op0))
-			return TRANSLATE_ERR;
-
-		if (is_byte(op1)) {
-			*opcode = (0x4000) | (op0->as.reg << 8) | (op1->as.num);
-		} else if (is_byte_reg(op1)) {
-			*opcode = (0x9000) | (op0->as.reg << 8) | (op1->as.reg << 4);
-		} else {
-			token_error(op1, "invalid operand: expected a byte value or register");
-			return TRANSLATE_ERR;
-		}
-	} break;
-
+	case INS_ADD:	return translate_add(stmt, opcode);
 
 	case INS_OR:	return translate_arithmetic(stmt, 0x8001, opcode);
 	case INS_AND:	return translate_arithmetic(stmt, 0x8002, opcode);
 	case INS_XOR:	return translate_arithmetic(stmt, 0x8003, opcode);
-
-	case INS_ADD:	return translate_add(stmt, opcode);
-
 	case INS_SUB:	return translate_arithmetic(stmt, 0x8005, opcode);
 	case INS_SUBN:	return translate_arithmetic(stmt, 0x8007, opcode);
 
 	case INS_SHR:	return translate_shift(stmt, 0x8006, opcode);
 	case INS_SHL:	return translate_shift(stmt, 0x800E, opcode);
 
+	case INS_RND:	return translate_rnd(stmt, opcode);
 
-	case INS_RND: {
-		if (!expect_operand_count(stmt, 2) || !expect_byte_reg(op0) || !expect_byte(op1))
-			return TRANSLATE_ERR;
+	case INS_DRW:	return translate_drw(stmt, opcode);
 
-		*opcode = (0xC000) | (op0->as.reg << 8) | (op1->as.num);
-	} break;
+	case INS_SE:	return translate_skip(stmt, 0x3000, 0x5000, opcode);
+	case INS_SNE:	return translate_skip(stmt, 0x4000, 0x9000, opcode);
 
-
-	case INS_DRW: {
-		if (!expect_operand_count(stmt, 3)
-				|| !expect_byte_reg(op0) || !expect_byte_reg(op1)
-				|| !expect_nibble(op2))
-			return TRANSLATE_ERR;
-
-		*opcode = (0xD000) | (op0->as.reg << 8) | (op1->as.reg << 4) | (op2->as.num);
-	} break;
-
-
-	case INS_SKP: {
-		if (!expect_operand_count(stmt, 1) || !expect_byte_reg(op0))
-			return TRANSLATE_ERR;
-
-		*opcode = (0xE09E) | (op0->as.reg << 8);
-	} break;
-
-	case INS_SKNP: {
-		if (!expect_operand_count(stmt, 1) || !expect_byte_reg(op0))
-			return TRANSLATE_ERR;
-
-		*opcode = (0xE0A1) | (op0->as.reg << 8);
-	} break;
-
+	case INS_SKP:	return translate_skip_pressed(stmt, 0xE09E, opcode);
+	case INS_SKNP:	return translate_skip_pressed(stmt, 0xE0A1, opcode);
 
 	case INS_LD:	return translate_ld(stmt, opcode);
 
-
 	default:	return TRANSLATE_ERR;
 	}
-
-	return TRANSLATE_OK;
 }
