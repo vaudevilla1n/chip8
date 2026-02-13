@@ -76,8 +76,15 @@ static int write_opcode(struct file *rom, const uint16_t opcode)
 	return 0;
 }
 
-static void test_translation(struct file *src, const char *rom_path)
+static void report_assembled_rom(const struct file *rom, const char *rom_path)
 {
+	printf("%zu byte rom assembled and written to \'%s\'\n", rom->len, rom_path);
+}
+
+static int test_translation(struct file *src, const char *rom_path)
+{
+	int err = 0;
+
 	struct lexer lexer = lexer_new(src->dat, src->len);
 
 	struct file rom = {
@@ -92,31 +99,42 @@ static void test_translation(struct file *src, const char *rom_path)
 		if (status == PARSE_EOF)
 			break;
 
-		if (status == PARSE_ERR)
+		if (status == PARSE_ERR) {
+			err = 1;
 			continue;
+		}
 
 		print_statement(&stmt);
 
 		uint16_t opcode;
-		if (translate_statement_to_opcode(&stmt, &opcode) != TRANSLATE_OK)
+		if (translate_statement_to_opcode(&stmt, &opcode) != TRANSLATE_OK) {
+			err = 1;
 			continue;
+		}
 
 		print_opcode(opcode);
 
 		if (write_opcode(&rom, opcode)) {
+			err = 1;
 			fprintf(stderr, "rom is too large, truncated to %d bytes\n", ROM_SIZE_MAX);
 			break;
 		}
 	}
 
-	if (write_file(&rom, rom_path))
+	if (write_file(&rom, rom_path)) {
+		err = 1;
 		perror(rom_path);
-	else
-		printf("assembled %zu byte rom\n", rom.len);
+	} else {
+		report_assembled_rom(&rom, rom_path);
+	}
+
+	return err;
 }
 
-int assemble_source_file(const char *src_path, const char *rom_path)
+static int test_assembler(const char *src_path, const char *rom_path)
 {
+	int err = 0;
+
 	struct file src = read_file(src_path);
 	if (!src.dat) {
 		perror(src_path);
@@ -124,9 +142,70 @@ int assemble_source_file(const char *src_path, const char *rom_path)
 	}
 
 	test_lexer(&src);
-	test_translation(&src, rom_path);
+
+	if (test_translation(&src, rom_path))
+		err = 1;
 
 	close_file(&src);
 
-	return 0;
+	return err;
+}
+
+int assemble_source_file(const char *src_path, const char *rom_path)
+{
+#ifdef DEBUG
+	return test_assembler(src_path, rom_path);
+#else
+	struct file src = read_file(src_path);
+	if (!src.dat) {
+		perror(src_path);
+		return 1;
+	}
+
+	struct lexer lexer = lexer_new(src.dat, src.len);
+
+	struct file rom = {
+		.dat = (char[ROM_SIZE_MAX]){ 0 },
+		.len = 0,
+	};
+
+	int err = 0;
+
+	struct stmt stmt;
+	for (;;) {
+		const enum parse_status status = parse_statement(&lexer, &stmt);
+
+		if (status == PARSE_EOF)
+			break;
+
+		if (status == PARSE_ERR) {
+			err = 1;
+			continue;
+		}
+
+		uint16_t opcode;
+		if (translate_statement_to_opcode(&stmt, &opcode) != TRANSLATE_OK) {
+			err = 1;
+			continue;
+		}
+
+		if (write_opcode(&rom, opcode)) {
+			fprintf(stderr, "rom is too large, truncated to %d bytes\n", ROM_SIZE_MAX);
+			break;
+		}
+	}
+
+	if (err)
+		return err;
+
+	if (!err && write_file(&rom, rom_path)) {
+		perror(rom_path);
+		err = 1;
+	}
+
+	if (!err)
+		report_assembled_rom(&rom, rom_path);
+
+	return err;
+#endif
 }
