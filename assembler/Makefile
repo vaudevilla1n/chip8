@@ -5,10 +5,10 @@ INC	:= $(wildcard src/*.h)
 
 .PHONY: all clean
 
-all: chip8_as
+all: casm
 
-chip8_as: $(SRC) $(INC)
-	$(CC) $(CFLAGS) $(SRC) -o chip8_as
+casm: $(SRC) $(INC)
+	$(CC) $(CFLAGS) $(SRC) -o casm
 
 clean:
-	rm -f ./chip8_as
+	rm -f ./casm

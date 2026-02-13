@@ -2,8 +2,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-#define OUT
+#define STREQ(s, t)	(!strcmp((s), (t)))
 
 #define	unused(x)	(void)(x)
 #define	todo(x)		do { fprintf(stderr, "todo: \'%s\'\n", (x)); abort(); } while (0)
