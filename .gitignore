@@ -1,7 +1,7 @@
 emulator/chip8
 assembler/casm
-assembler/*.c8
+*.c8
 *test
 *a.out
-*/*.rom
+*.rom
 rom
