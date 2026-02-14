@@ -2,14 +2,13 @@
 
 #include <time.h>
 #include <poll.h>
-#include <fcntl.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <termios.h>
+#include <curses.h>
 #include <sys/stat.h>
 
 #define unused(x)	(void)(x)
@@ -34,6 +33,10 @@
 
 #define CHIP8_DISPLAY_HEIGHT	32
 #define CHIP8_DISPLAY_WIDTH	64
+
+#define CHIP8_DISPLAY_X		((COLS - CHIP8_DISPLAY_WIDTH) / 2)
+#define CHIP8_DISPLAY_Y		((LINES - CHIP8_DISPLAY_HEIGHT) / 2)
+
 #define CHIP8_DISPLAY_MEMORY	(CHIP8_DISPLAY_HEIGHT * (CHIP8_DISPLAY_WIDTH / 8))
 
 enum chip8_register {
@@ -67,6 +70,10 @@ void chip8_diagnostics(const struct chip8 *machine);
 
 void chip8_run(struct chip8 *machine);
 
+void tui_init(void);
+void tui_draw_display(const struct chip8 *machine);
+void tui_deinit(void);
+
 
 [[noreturn]] void usage(void)
 {
@@ -77,24 +84,100 @@ int main(int argc, char **argv)
 {
 	if (argc != 2)
 		usage();
+	
+	const char *rom_path = argv[1];
+	chip8_init(&emulator, rom_path);
+
+	tui_init();
+
+	/*
+	printw("(\'%s\')\n", rom_path);
 
 	chip8_diagnostics(&emulator);
 
-	const char *rom_path = argv[1];
-
-	printf("loading rom (\'%s\')...\n", rom_path);
-
-	chip8_init(&emulator, rom_path);
-
-	printf("rom successfully loaded\n");
-
-	printf("running program...\n");
-
 	chip8_run(&emulator);
 
-	printf("program completed, dumping registers\n");
-
+	printw("program completed, dumping registers\n");
 	chip8_dump_registers(&emulator);
+	*/
+
+	while (getch() != 'q') {
+		tui_draw_display(&emulator);
+	}
+
+	tui_deinit();
+}
+
+static void draw_box(const int y, const int x, const int h, const int w)
+{
+	mvhline(y, x, ACS_ULCORNER, 1);
+	mvhline(y + h, x, ACS_LLCORNER, 1);
+	mvhline(y + h, x + w, ACS_LRCORNER, 1);
+	mvhline(y, x + w, ACS_URCORNER, 1);
+
+	mvhline(y, x + 1, 0, w - 1);
+	mvvline(y + 1, x, 0, h - 1);
+	mvhline(y + h, x + 1, 0, w - 1);
+	mvvline(y + 1, x + w, 0, h - 1);
+}
+
+#define	BLACK	1
+#define	WHITE	2
+
+static inline void clear_pixel(struct chip8 *machine, const int y, const int x)
+{
+	const int pos = (y * CHIP8_DISPLAY_WIDTH) + x;
+	machine->display[pos / 8] &= ~(1 << (pos % 8));
+}
+
+static inline void set_pixel(struct chip8 *machine, const int y, const int x)
+{
+	const int pos = (y * CHIP8_DISPLAY_WIDTH) + x;
+	machine->display[pos / 8] &= (1 << (pos % 8));
+}
+
+static inline bool pixel_set(const struct chip8 *machine, const int y, const int x)
+{
+	const int pos = (y * CHIP8_DISPLAY_WIDTH) + x;
+	const uint8_t pixel = (machine->display[pos / 8] & (1 << (pos % 8)));
+
+	return pixel != 0;
+}
+
+void tui_draw_display(const struct chip8 *machine)
+{
+	for (int y = 0; y < CHIP8_DISPLAY_HEIGHT; y++) {
+		move(CHIP8_DISPLAY_Y + y, CHIP8_DISPLAY_X);
+		for (int x = 0; x < CHIP8_DISPLAY_WIDTH; x++) {
+			attr_on(COLOR_PAIR(pixel_set(machine, y, x) ? WHITE : BLACK), nullptr);
+			addch(ACS_BLOCK);
+		}
+	}
+
+	standend();
+}
+
+void tui_init(void)
+{
+	initscr();
+	start_color();
+
+	init_pair(BLACK, COLOR_BLACK, COLOR_BLACK);
+	init_pair(WHITE, COLOR_WHITE, COLOR_WHITE);
+
+	cbreak();
+	noecho();
+	nodelay(stdscr, true);
+
+	draw_box(CHIP8_DISPLAY_Y - 1, CHIP8_DISPLAY_X - 1, CHIP8_DISPLAY_HEIGHT + 2, CHIP8_DISPLAY_WIDTH + 2);
+
+	mvprintw(LINES - 1, 0, "%d x %d display\n", COLS, LINES);
+	move(0, 0);
+}
+
+void tui_deinit(void)
+{
+	endwin();
 }
 
 
@@ -127,22 +210,22 @@ void chip8_init(struct chip8 *machine, const char *rom_path)
 
 void chip8_dump_registers(const struct chip8 *machine)
 {
-	printf("PC: 0x%.3hx\n", machine->pc);
-	printf("SP: 0x%.3hx\n", machine->sp);
-	printf("I: 0x%.3hx\n", machine->i_reg);
+	printw("PC: 0x%.3hx\n", machine->pc);
+	printw("SP: 0x%.3hx\n", machine->sp);
+	printw("I: 0x%.3hx\n", machine->i_reg);
 
 	for (enum chip8_register reg = REG_V0; reg < CHIP8_REGISTERS; reg++)
-		printf("V%X: 0x%.2hhx\n", reg, machine->v_reg[reg]); 
+		printw("V%X: 0x%.2hhx\n", reg, machine->v_reg[reg]); 
 }
 
 void chip8_diagnostics(const struct chip8 *machine)
 {
-	printf("(chip8)\n");
-	printf("total data registers: %zu\n", sizeof(machine->v_reg));
-	printf("total available memory: %zu\n", sizeof(machine->memory));
-	printf("total stack memory: %zu\n", sizeof(machine->stack));
-	printf("maximum stack frames: %zu\n", countof(machine->stack));
-	printf("display (%d x %d)\n", CHIP8_DISPLAY_WIDTH, CHIP8_DISPLAY_HEIGHT);
+	printw("(chip8)\n");
+	printw("total data registers: %zu\n", sizeof(machine->v_reg));
+	printw("total available memory: %zu\n", sizeof(machine->memory));
+	printw("total stack memory: %zu\n", sizeof(machine->stack));
+	printw("maximum stack frames: %zu\n", countof(machine->stack));
+	printw("display (%d x %d)\n", CHIP8_DISPLAY_WIDTH, CHIP8_DISPLAY_HEIGHT);
 }
 
 static inline void clear_display(struct chip8 *machine)
