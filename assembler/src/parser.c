@@ -127,6 +127,11 @@ static enum parse_status parse_operands(struct lexer *lexer, struct stmt *stmt)
 		stmt->operands[stmt->noperands++] = next_token(lexer);
 	}
 
+	if (check_operand_token(lexer)) {
+		const struct token t = next_token(lexer);
+		return statement_error(lexer, &t, "erroneous operand, maybe missing a comma");
+	}
+
 	return PARSE_OK;
 }
 
