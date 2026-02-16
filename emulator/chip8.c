@@ -93,6 +93,7 @@ bool chip8_run(struct chip8 *machine);
 
 
 void tui_init(void);
+void tui_draw_screen_size(void);
 void tui_draw_display_border(void);
 void tui_draw_display(const struct chip8 *machine);
 void tui_draw_register_info(const struct chip8 *machine);
@@ -125,6 +126,8 @@ int main(int argc, char **argv)
 		} else {
 			tui_info("program completed");
 		}
+
+		tui_draw_screen_size();
 	}
 
 	tui_deinit();
@@ -133,9 +136,20 @@ int main(int argc, char **argv)
 #define	BLACK	1
 #define	WHITE	2
 
+void assert_screen_size(void)
+{
+	if (CHIP8_DISPLAY_HEIGHT + 2 > LINES || CHIP8_DISPLAY_WIDTH + 2 > COLS) {
+		tui_deinit();
+		die("screen too small to display emulator");
+	}
+}
+
 void tui_init(void)
 {
 	initscr();
+
+	assert_screen_size();
+
 	start_color();
 
 	init_pair(BLACK, COLOR_BLACK, COLOR_BLACK);
@@ -161,10 +175,15 @@ static void draw_box(const int y, const int x, const int h, const int w)
 	mvvline(y + 1, x + w, 0, h - 1);
 }
 
+void tui_draw_screen_size(void)
+{
+	if (LINES - 1 > CHIP8_DISPLAY_Y)
+		mvprintw(LINES - 1, 0, "%d x %d screen", COLS, LINES);
+}
+
 void tui_draw_display_border(void)
 {
 	draw_box(CHIP8_DISPLAY_Y - 1, CHIP8_DISPLAY_X - 1, CHIP8_DISPLAY_HEIGHT + 2, CHIP8_DISPLAY_WIDTH + 2);
-	mvprintw(LINES - 1, 0, "%d x %d display", COLS, LINES);
 }
 
 void tui_draw_display(const struct chip8 *machine)
