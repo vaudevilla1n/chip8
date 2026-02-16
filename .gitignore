@@ -5,3 +5,4 @@ assembler/casm
 *a.out
 *.rom
 rom
+!example/*

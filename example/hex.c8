@@ -1,0 +1,35 @@
+	; V0, V1 (x, y)
+	; V2 sprite
+	; V3 x increment
+	; V4 y increment
+	; V5 sprite increment
+
+	ld V0, 0
+	ld V1, 0
+	ld V2, 0
+	ld V3, 5
+	ld V4, 6
+	ld V5, 1
+
+; 0x512 + 6 ins (6 * 2 bytes)
+; 0x200 dumbass
+
+; 0x20C
+	sne V2, 16
+	jp 0x222
+	ld F, V2
+	drw V0, V1, 5
+	add V2, V5
+	add V0, V3
+	se V0, 65
+	jp	0x20C
+	ld V0, 0
+	add V1, V4
+	jp	0x20C
+
+; 0x200 + 18 ins (17 * 2 bytes)
+; 0x222
+	ld VD, K
+
+	sne VD, 0x63 ; 'c'
+	cls
