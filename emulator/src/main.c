@@ -1,3 +1,10 @@
+/*
+	basic chip8 implementation
+
+	all thanks to:
+		cowgod @ http://devernay.free.fr/hacks/chip8/C8TECH10.HTM#Dxyn
+		wikipedia @ https://en.wikipedia.org/wiki/CHIP-8
+*/
 #include "tui.h"
 #include "chip8.h"
 #include "common.h"
