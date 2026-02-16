@@ -79,7 +79,7 @@ static inline bool is_reg(const struct token *op)
 
 static inline bool is_byte_reg(const struct token *op)
 {
-	return (op->type == TOKEN_REGISTER && (op->as.reg <= REG_VF));
+	return (op->type == TOKEN_REGISTER && (op->as.reg < REG_VF));
 }
 
 
