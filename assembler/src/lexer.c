@@ -158,12 +158,7 @@ static void lex_number(struct lexer *lexer, struct token *t, const size_t start,
 
 		while (ishexdigit(peek_char(lexer)))
 			next_char(lexer);
-	} else if (init == '0') {
-		if (!isoctdigit(peek_char(lexer))) {
-			invalid_token(t, "erroneous octal delimiter");
-			return;
-		}
-
+	} else if (init == '0' && isoctdigit(peek_char(lexer))) {
 		while (isoctdigit(peek_char(lexer)))
 			next_char(lexer);
 	} else {
