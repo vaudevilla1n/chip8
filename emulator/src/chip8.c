@@ -1,45 +1,15 @@
 #define _DEFAULT_SOURCE
 
+#include "chip8.h"
+
+#include "common.h"
+
 #include <time.h>
-#include <poll.h>
 #include <errno.h>
-#include <stdio.h>
-#include <stdint.h>
-#include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
-#include <curses.h>
 #include <sys/stat.h>
-
-#define unused(x)	(void)(x)
-#define todo(x)		do { fprintf(stderr, "todo: \'%s\'\n", (x)); abort(); } while (0)
-
-#define warn(fmt, ...)	do { fprintf(stderr, fmt __VA_OPT__(,)__VA_ARGS__); fputc('\n', stderr); } while (0)
-#define die(fmt, ...)	do { warn(fmt __VA_OPT__(,)__VA_ARGS__); exit(1); } while (0)
-
-#define countof(arr)	(sizeof(arr) / sizeof((arr)[0]))
-
-
-#define CHIP8_MEMORY		0x1000
-#define CHIP8_RESERVED_MEMORY	0x200
-#define CHIP8_AVAILABLE_MEMORY	0xe00
-
-#define CHIP8_PROGRAM_START	0x200
-
-#define CHIP8_STACK_SIZE	0x10
-#define CHIP8_STACK_ADDR	0xEFF
-
-#define CHIP8_TIMER_FREQ	60
-
-#define CHIP8_FONT_ADDR		0x000
-#define CHIP8_FONT_SIZE		5
-#define CHIP8_TOTAL_FONTS	16
-
-#define CHIP8_DISPLAY_HEIGHT	32
-#define CHIP8_DISPLAY_WIDTH	64
-
-#define CHIP8_DISPLAY_X		((COLS - CHIP8_DISPLAY_WIDTH) / 2)
-#define CHIP8_DISPLAY_Y		((LINES - CHIP8_DISPLAY_HEIGHT) / 2)
 
 uint8_t	chip8_fonts[CHIP8_TOTAL_FONTS][CHIP8_FONT_SIZE] = {
 	[0x0] 	= { 0xF0, 0x90, 0x90, 0x90, 0xF0 },
@@ -59,181 +29,6 @@ uint8_t	chip8_fonts[CHIP8_TOTAL_FONTS][CHIP8_FONT_SIZE] = {
 	[0xE] 	= { 0xF0, 0x80, 0xF0, 0x80, 0xF0 },
 	[0xF] 	= { 0xF0, 0x80, 0xF0, 0x80, 0x80 },
 };
-
-enum chip8_register {
-	REG_V0, REG_V1, REG_V2, REG_V3, REG_V4, REG_V5, REG_V6,
-	REG_V7, REG_V8, REG_V9, REG_VA, REG_VB, REG_VC, REG_VD,
-	REG_VE, REG_VF, CHIP8_REGISTERS,
-};
-
-struct chip8 {
-	uint8_t delay_timer;
-	uint8_t sound_timer;
-
-	uint16_t pc;
-
-	uint16_t i_reg;
-
-	uint8_t v_reg[CHIP8_REGISTERS];
-
-	uint8_t sp;
-	uint16_t stack[CHIP8_STACK_SIZE];
-
-	uint8_t memory[CHIP8_MEMORY];
-
-	uint8_t display[CHIP8_DISPLAY_HEIGHT][CHIP8_DISPLAY_WIDTH];
-} emulator;
-
-void chip8_init(struct chip8 *machine, const char *rom_path);
-
-void chip8_dump_registers(const struct chip8 *machine);
-void chip8_diagnostics(const struct chip8 *machine);
-
-bool chip8_run(struct chip8 *machine);
-
-
-void tui_init(void);
-void tui_draw_screen_size(void);
-void tui_draw_display_border(void);
-void tui_draw_display(const struct chip8 *machine);
-void tui_draw_register_info(const struct chip8 *machine);
-void tui_deinit(void);
-
-#define tui_info(fmt, ...)	mvprintw(LINES - 2, 0, fmt __VA_OPT__(,)__VA_ARGS__)
-
-
-[[noreturn]] void usage(void)
-{
-	die("usage: chip8 ROM");
-}
-
-int main(int argc, char **argv)
-{
-	if (argc != 2)
-		usage();
-	
-	const char *rom_path = argv[1];
-	chip8_init(&emulator, rom_path);
-
-	tui_init();
-
-	while (getch() != 'q') {
-		tui_draw_display_border();
-		
-		if (chip8_run(&emulator)) {
-			tui_draw_display(&emulator);
-			tui_draw_register_info(&emulator);
-		} else {
-			tui_info("program completed");
-		}
-
-		tui_draw_screen_size();
-	}
-
-	tui_deinit();
-}
-
-#define	BLACK	1
-#define	WHITE	2
-
-void assert_screen_size(void)
-{
-	if (CHIP8_DISPLAY_HEIGHT + 2 > LINES || CHIP8_DISPLAY_WIDTH + 2 > COLS) {
-		tui_deinit();
-		die("screen too small to display emulator");
-	}
-}
-
-void tui_init(void)
-{
-	initscr();
-
-	assert_screen_size();
-
-	start_color();
-
-	init_pair(BLACK, COLOR_BLACK, COLOR_BLACK);
-	init_pair(WHITE, COLOR_WHITE, COLOR_WHITE);
-
-	cbreak();
-	noecho();
-	nodelay(stdscr, true);
-
-	curs_set(0);
-}
-
-static void draw_box(const int y, const int x, const int h, const int w)
-{
-	mvhline(y, x, ACS_ULCORNER, 1);
-	mvhline(y + h, x, ACS_LLCORNER, 1);
-	mvhline(y + h, x + w, ACS_LRCORNER, 1);
-	mvhline(y, x + w, ACS_URCORNER, 1);
-
-	mvhline(y, x + 1, 0, w - 1);
-	mvvline(y + 1, x, 0, h - 1);
-	mvhline(y + h, x + 1, 0, w - 1);
-	mvvline(y + 1, x + w, 0, h - 1);
-}
-
-void tui_draw_screen_size(void)
-{
-	if (LINES - 1 > CHIP8_DISPLAY_Y)
-		mvprintw(LINES - 1, 0, "%d x %d screen", COLS, LINES);
-}
-
-void tui_draw_display_border(void)
-{
-	draw_box(CHIP8_DISPLAY_Y - 1, CHIP8_DISPLAY_X - 1, CHIP8_DISPLAY_HEIGHT + 2, CHIP8_DISPLAY_WIDTH + 2);
-}
-
-void tui_draw_display(const struct chip8 *machine)
-{
-	for (int y = 0; y < CHIP8_DISPLAY_HEIGHT; y++) {
-		move(CHIP8_DISPLAY_Y + y, CHIP8_DISPLAY_X);
-		for (int x = 0; x < CHIP8_DISPLAY_WIDTH; x++) {
-			const uint8_t p = machine->display[y][x];
-			attr_on(COLOR_PAIR(p ? WHITE : BLACK), nullptr);
-			addch(ACS_BLOCK);
-		}
-	}
-
-	standend();
-}
-
-#define REGISTERS_PER_COL	4
-
-static bool can_draw_register_info(void)
-{
-	/* 
-		9 characters
-		'XX: 0x00 ' * 4
-
-		(3 special + 16 data registers) / 4 regs per column
-		= 5 columns
-	*/
-	const int x_needed = 36;
-	const int y_needed = 5;
-
-	return (x_needed < COLS && y_needed < CHIP8_DISPLAY_Y);
-}
-
-void tui_draw_register_info(const struct chip8 *machine)
-{
-	if (!can_draw_register_info())
-		return;
-	
-	move(0, 0);
-	
-	printw("PC: 0x%.3hx SP: 0x%.3hx I: 0x%.3hx\n", machine->pc, machine->sp, machine->i_reg);
-
-	for (enum chip8_register reg = REG_V0; reg < CHIP8_REGISTERS; reg++)
-		printw("V%X: 0x%.2hhx%c", reg, machine->v_reg[reg], ((reg + 1) % REGISTERS_PER_COL) ? ' ' : '\n'); 
-}
-
-void tui_deinit(void)
-{
-	endwin();
-}
 
 
 static void load_rom(struct chip8 *machine, const char *path)
@@ -264,6 +59,7 @@ void chip8_init(struct chip8 *machine, const char *rom_path)
 {
 	srand(time(nullptr));
 	*machine = (struct chip8){
+		.state = CHIP8_OK,
 		.delay_timer = CHIP8_TIMER_FREQ,
 		.sound_timer = CHIP8_TIMER_FREQ,
 		.pc = CHIP8_PROGRAM_START,
@@ -273,6 +69,19 @@ void chip8_init(struct chip8 *machine, const char *rom_path)
 	load_rom(machine, rom_path);
 }
 
+
+static void chip8_error(struct chip8 *machine, const char *fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+
+	machine->state = CHIP8_ERR;
+	vsnprintf(machine->err, CHIP8_ERROR_MAX, fmt, args);
+
+	va_end(args);
+}
+
+
 static inline void clear_display(struct chip8 *machine)
 {
 	memset(machine->display, 0x0, sizeof(machine->display));
@@ -281,7 +90,7 @@ static inline void clear_display(struct chip8 *machine)
 static inline uint8_t *get_memory_address(struct chip8 *machine, const uint16_t addr)
 {
 	if (addr >= CHIP8_MEMORY)
-		tui_info("invalid memory access at 0x%hX", addr);
+		chip8_error(machine, "invalid memory access at 0x%hX", addr);
 	
 	return machine->memory + addr;
 }
@@ -311,24 +120,20 @@ static void draw(struct chip8 *machine,
 	}
 }
 
-static void get_font(struct chip8 *machine, const uint8_t sprite_id)
+static inline void get_font(struct chip8 *machine, const uint8_t sprite_id)
 {
 	machine->i_reg = CHIP8_FONT_ADDR + (CHIP8_FONT_SIZE * sprite_id);
 }
 
-static uint8_t key_pressed(void)
+static inline uint8_t key_pressed(void)
 {
-	nodelay(stdscr, false);
-	const uint8_t k = getch();
-	nodelay(stdscr, true);
-
-	return k;
+	return getchar();
 }
 
 static void subroutine_return(struct chip8 *machine)
 {
 	if (!machine->sp)
-		tui_info("stack underflow???");
+		chip8_error(machine, "stack underflow???");
 
 	machine->pc = machine->stack[--machine->sp];
 }
@@ -336,7 +141,7 @@ static void subroutine_return(struct chip8 *machine)
 static void subroutine_enter(struct chip8 *machine, const uint16_t addr)
 {
 	if (machine->sp >= CHIP8_STACK_SIZE)
-		tui_info("stack overflow");
+		chip8_error(machine, "stack overflow");
 
 	machine->stack[machine->sp++] = machine->pc;
 	machine->pc = addr;
@@ -601,17 +406,17 @@ static void tick(struct chip8 *machine)
 	usleep((1000 * 1000) / CHIP8_TIMER_FREQ);
 }
 
-bool chip8_run(struct chip8 *machine)
+void chip8_run(struct chip8 *machine)
 {
 	const uint16_t op = read_op_code(machine);
-	if (!op)
-		return false;
+	if (!op) {
+		machine->state = CHIP8_COMPLETE;
+		return;
+	}
 
 	advance_program_counter(machine);
 
 	instruct(machine, op);
 
 	tick(machine);
-	
-	return true;
 }
