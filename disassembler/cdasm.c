@@ -156,36 +156,133 @@ static inline void write_statement(char *stmt, const char *fmt, ...)
 	va_end(args);
 }
 
+static inline uint8_t reg0(const uint16_t op)
+{
+	return (op >> 8) & 0xF;
+}
+
+static inline uint8_t reg1(const uint16_t op)
+{
+	return (op >> 4) & 0xF;
+}
+
+static inline uint16_t addr(const uint16_t op)
+{
+	return (op & 0x0FFF);
+}
+
+static inline uint8_t byte(const uint16_t op)
+{
+	return (op & 0x00FF);
+}
+
+static inline void write_address_statement(char *stmt, const char *ins, const uint16_t op)
+{
+	write_statement(stmt, "%s 0x%.3hX", ins, addr(op));
+}
+
+static inline void write_register_statement(char *stmt, const char *ins, const uint16_t op)
+{
+	write_statement(stmt, "%s V%X", ins, reg0(op));
+}
+
+static inline void write_byte_statement(char *stmt, const char *ins, const uint16_t op)
+{
+	write_statement(stmt, "%s V%X, 0x%.2hhX", ins, reg0(op), byte(op));
+}
+
+static inline void write_arithmetic_statement(char *stmt, const char *ins, const uint16_t op)
+{
+	write_statement(stmt, "%s V%X, V%X", ins, reg0(op), reg1(op));
+}
+
+static inline void write_left_special_statement(char *stmt, const char *ins, const char *special, const uint16_t op)
+{
+	write_statement(stmt, "%s %s, V%X", ins, special, reg0(op));
+}
+
+static inline void write_right_special_statement(char *stmt, const char *ins, const char *special, const uint16_t op)
+{
+	write_statement(stmt, "%s V%X, %s", ins, reg0(op), special);
+}
+
 static const char *craft_statement(const uint16_t op)
 {
 	static char stmt[STATEMENT_MAX];
 
 	switch (op & 0xF000) {
-	case 0x0: {
+	case 0x0000: {
 		switch (op & 0x0FFF) {
 		case OP_CLS:	write_statement(stmt, "cls"); break;
 		case OP_RET:	write_statement(stmt, "ret"); break;
+		case OP_SYS:	write_address_statement(stmt, "sys", op); break;
 
-		default:	write_statement(stmt, "sys"); break;
+		default:	return nullptr;
 		}
 	} break;
 
-	case OP_JP_A:	write_statement(stmt, "jp"); break;
-	case OP_JP_VA:	write_statement(stmt, "jp"); break;
+	case 0x8000: {
+		switch (op & 0xF00F) {
+		case OP_LD_VV:	write_arithmetic_statement(stmt, "ld", op); break;
+		case OP_OR:	write_arithmetic_statement(stmt, "or", op); break;
+		case OP_AND:	write_arithmetic_statement(stmt, "and", op); break;
+		case OP_XOR:	write_arithmetic_statement(stmt, "xor", op); break;
+		case OP_ADD_VV:	write_arithmetic_statement(stmt, "add", op); break;
+		case OP_SUB:	write_arithmetic_statement(stmt, "sub", op); break;
+		case OP_SHR:	write_arithmetic_statement(stmt, "shr", op); break;
+		case OP_SUBN:	write_arithmetic_statement(stmt, "subn", op); break;
+		case OP_SHL:	write_arithmetic_statement(stmt, "shl", op); break;
 
-	case OP_CALL:	write_statement(stmt, "call"); break;
+		default:	return nullptr;
+		}
+	} break;
 
-	case OP_SE_VB:	write_statement(stmt, "se"); break;
-	case OP_SE_VV:	write_statement(stmt, "se"); break;
+	case 0xE000: {
+		switch (op & 0xF0FF) {
+		case OP_SKP:	write_register_statement(stmt, "skp", op); break;
+		case OP_SKNP:	write_register_statement(stmt, "sknp", op); break;
 
-	case OP_SNE_VB:	write_statement(stmt, "sne"); break;
-	case OP_SNE_VV:	write_statement(stmt, "sne"); break;
+		default:	return nullptr;
+		}
+	} break;
 
-	case OP_RND:	write_statement(stmt, "rnd"); break;
-	case OP_DRW:	write_statement(stmt, "drw"); break;
+	case 0xF000: {
+		switch (op & 0xF0FF) {
+		case OP_LD_VD:		write_right_special_statement(stmt, "ld", "D", op); break;
+		case OP_LD_VK:		write_right_special_statement(stmt, "ld", "K", op); break;
 
-	case OP_LD_VB:	write_statement(stmt, "ld"); break;
-	case OP_LD_IA:	write_statement(stmt, "ld"); break;
+		case OP_LD_DV:		write_left_special_statement(stmt, "ld", "D", op); break;
+		case OP_LD_SV:		write_left_special_statement(stmt, "ld", "S", op); break;
+		case OP_LD_FV:		write_left_special_statement(stmt, "ld", "F", op); break;
+		case OP_LD_BCDV:	write_left_special_statement(stmt, "ld", "B", op); break;
+
+		case OP_LD_MV:		write_left_special_statement(stmt, "ld", "[I]", op); break;
+		case OP_LD_VM:		write_right_special_statement(stmt, "ld", "[I]", op); break;
+
+		case OP_ADD_IV:		write_left_special_statement(stmt, "add", "I", op); break;
+
+		default:		return nullptr;
+		}
+	} break;
+
+	case OP_JP_A:	write_address_statement(stmt, "jp", op); break;
+	case OP_JP_VA:	write_statement(stmt, "jp V0, 0x%hX", addr(op)); break;
+
+	case OP_CALL:	write_address_statement(stmt, "call", op); break;
+
+	case OP_SE_VB:	write_byte_statement(stmt, "se", op); break;
+	case OP_SE_VV:	write_register_statement(stmt, "se", op); break;
+
+	case OP_SNE_VB:	write_byte_statement(stmt, "sne", op); break;
+	case OP_SNE_VV:	write_register_statement(stmt, "sne", op); break;
+
+	case OP_RND:	write_byte_statement(stmt, "rnd", op); break;
+	case OP_DRW:	write_statement(stmt, "drw V%hX, V%hX, 0x%hhX", reg0(op), reg1(op), (op & 0x000F)); break;
+
+	case OP_ADD_VB:	write_byte_statement(stmt, "add", op); break;
+
+	case OP_LD_VB:	write_byte_statement(stmt, "ld", op); break;
+	case OP_LD_IA:	write_statement(stmt, "ld I, 0x%.3hX", addr(op)); break;
 
 	default:	return nullptr;
 	}
@@ -198,13 +295,23 @@ int disassemble(FILE *rom, FILE *src)
 	uint16_t op;
 
 	for (;;) {
+		const long pos = ftell(rom);
+
 		if (read_opcode(rom, &op))
 			break;
 
-		printf("0x%hx\n", op);
+#ifdef DEBUG
+		fprintf(stderr, "0x%hx\n", op);
+#endif
 
 		const char *stmt = craft_statement(op);
-		printf("\t%s\n", stmt);
+
+		if (!stmt) {
+			fprintf(stderr, "pos %ld: invalid opcode: 0x%hX\n", pos, op);
+			continue;
+		}
+
+		fprintf(src, "\t%s\n", stmt);
 	}
 
 	return 0;
