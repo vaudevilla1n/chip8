@@ -1,5 +1,6 @@
 emulator/chip8
 assembler/casm
+disassembler/cdasm
 *.c8
 *test
 *a.out
